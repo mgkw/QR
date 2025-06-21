@@ -302,6 +302,110 @@ body {
     }
 }
 
+/* Camera Success Indicator */
+.camera-success-indicator {
+    backdrop-filter: blur(5px);
+    font-weight: bold;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.success-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    text-align: center;
+}
+
+.success-content i {
+    font-size: 3rem;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+}
+
+.success-message {
+    font-size: 1.2rem;
+    color: white;
+    font-weight: bold;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+@keyframes cameraSuccessFlash {
+    0% {
+        opacity: 0;
+        transform: scale(0.5);
+    }
+    20% {
+        opacity: 1;
+        transform: scale(1.1);
+    }
+    40% {
+        transform: scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(1);
+    }
+}
+
+@keyframes cameraWarningFlash {
+    0% {
+        opacity: 0;
+        transform: scale(0.5) rotate(-5deg);
+    }
+    15% {
+        opacity: 1;
+        transform: scale(1.1) rotate(5deg);
+    }
+    30% {
+        transform: scale(1) rotate(-2deg);
+    }
+    45% {
+        transform: scale(1.05) rotate(2deg);
+    }
+    60% {
+        transform: scale(1) rotate(0deg);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(1) rotate(0deg);
+    }
+}
+
+/* Camera Center Ripple Effects */
+@keyframes centerRippleSuccess {
+    0% {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: translate(-50%, -50%) scale(15);
+        opacity: 0.6;
+    }
+    100% {
+        transform: translate(-50%, -50%) scale(25);
+        opacity: 0;
+    }
+}
+
+@keyframes centerRippleWarning {
+    0% {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 1;
+    }
+    30% {
+        transform: translate(-50%, -50%) scale(8);
+        opacity: 0.8;
+    }
+    60% {
+        transform: translate(-50%, -50%) scale(12);
+        opacity: 0.4;
+    }
+    100% {
+        transform: translate(-50%, -50%) scale(20);
+        opacity: 0;
+    }
+}
+
 /* Results Section */
 .results-section {
     margin-top: 2rem;
@@ -871,6 +975,55 @@ body {
     25%, 75% { opacity: 0.8; }
 }
 
+/* Status Badges for New/Duplicate */
+.status-badge {
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: bold;
+    margin-left: 8px;
+    display: inline-block;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+
+.new-status {
+    background: linear-gradient(135deg, #28a745, #20c997);
+    color: white;
+    animation: newBadgeGlow 3s ease-in-out infinite;
+    box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
+}
+
+.duplicate-status {
+    background: linear-gradient(135deg, #ffc107, #fd7e14);
+    color: #333;
+    animation: duplicateBadgePulse 2s ease-in-out infinite;
+    box-shadow: 0 2px 8px rgba(255, 193, 7, 0.3);
+}
+
+@keyframes newBadgeGlow {
+    0%, 100% {
+        box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
+        transform: scale(1);
+    }
+    50% {
+        box-shadow: 0 4px 16px rgba(40, 167, 69, 0.5);
+        transform: scale(1.05);
+    }
+}
+
+@keyframes duplicateBadgePulse {
+    0%, 100% {
+        box-shadow: 0 2px 8px rgba(255, 193, 7, 0.3);
+        opacity: 1;
+    }
+    50% {
+        box-shadow: 0 4px 16px rgba(255, 193, 7, 0.6);
+        opacity: 0.8;
+    }
+}
+
 .result-code {
     display: flex;
     align-items: center;
@@ -1066,6 +1219,21 @@ input, textarea {
     -moz-user-select: text;
     -ms-user-select: text;
     user-select: text;
+}
+
+/* Mobile Camera Success Indicators */
+@media (max-width: 768px) {
+    .success-content i {
+        font-size: 4rem;
+    }
+    
+    .success-message {
+        font-size: 1.4rem;
+    }
+    
+    .camera-success-indicator {
+        border-radius: 20px;
+    }
 }
 
 /* Enhanced Mobile Design */

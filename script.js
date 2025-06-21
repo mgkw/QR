@@ -10,6 +10,7 @@ let scannedResults = [];
 let registeredUsers = [];
 let recentScans = []; // For 20-second duplicate detection
 let highlightOverlay = null; // For barcode highlighting
+let isProcessingCode = false; // Prevent simultaneous code processing
 
 // Owner Settings
 const OWNER_PASSWORD = "owner123"; // يمكن تغييرها لاحقاً
@@ -141,11 +142,41 @@ rememberMeCheckbox.addEventListener('change', function() {
 
 // Initialize App
 function initApp() {
+    console.log('Initializing Barcode Scanner App...');
+    
+    // Check if all required libraries are loaded
+    checkLibrariesStatus();
+    
     loadUserSession();
     loadRegisteredUsers();
     loadSettings();
     updateUI();
     loadResults();
+    
+    console.log('App initialization complete');
+}
+
+// Check libraries status
+function checkLibrariesStatus() {
+    const quaggaLoaded = typeof Quagga !== 'undefined';
+    const jsQRLoaded = typeof jsQR !== 'undefined';
+    
+    console.log('=== Library Status Check ===');
+    console.log('Quagga (Traditional Barcodes):', quaggaLoaded ? '✅ Loaded' : '❌ Not Loaded');
+    console.log('jsQR (QR Codes):', jsQRLoaded ? '✅ Loaded' : '❌ Not Loaded');
+    
+    if (!quaggaLoaded && !jsQRLoaded) {
+        console.error('❌ CRITICAL: No scanning libraries loaded!');
+        showAlert('خطأ حرج: لم يتم تحميل مكتبات المسح. يرجى إعادة تحميل الصفحة.', 'error');
+    } else if (!quaggaLoaded) {
+        console.warn('⚠️ WARNING: Quagga not loaded - only QR codes will work');
+    } else if (!jsQRLoaded) {
+        console.warn('⚠️ WARNING: jsQR not loaded - only traditional barcodes will work');
+    } else {
+        console.log('✅ All libraries loaded successfully');
+    }
+    
+    console.log('===============================');
 }
 
 // User Management
@@ -1447,92 +1478,133 @@ async function startScanning() {
 // Initialize dual scanning system (jsQR + QuaggaJS)
 async function initializeDualScanning() {
     return new Promise((resolve, reject) => {
-        // Initialize Quagga for traditional barcodes with enhanced settings
-        Quagga.init({
-            inputStream: {
-                name: "Live",
-                type: "LiveStream",
-                target: video,
-                constraints: {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    facingMode: "environment"
+        // Check if required libraries are loaded
+        const quaggaLoaded = typeof Quagga !== 'undefined';
+        const jsQRLoaded = typeof jsQR !== 'undefined';
+        
+        console.log('Library status:', { quaggaLoaded, jsQRLoaded });
+        
+        if (!quaggaLoaded && !jsQRLoaded) {
+            console.error('Neither Quagga nor jsQR libraries are loaded');
+            showAlert('خطأ: لم يتم تحميل مكتبات المسح بشكل صحيح', 'error');
+            reject(new Error('Libraries not loaded'));
+            return;
+        }
+        
+        // Initialize Quagga for traditional barcodes if available
+        if (quaggaLoaded) {
+            Quagga.init({
+                inputStream: {
+                    name: "Live",
+                    type: "LiveStream",
+                    target: video,
+                    constraints: {
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: "environment"
+                    }
+                },
+                locator: {
+                    patchSize: "medium",
+                    halfSample: true
+                },
+                numOfWorkers: 2,
+                frequency: 10,
+                decoder: {
+                    readers: [
+                        "code_128_reader",
+                        "ean_reader",
+                        "ean_8_reader", 
+                        "code_39_reader",
+                        "code_39_vin_reader",
+                        "codabar_reader",
+                        "upc_reader",
+                        "upc_e_reader",
+                        "i2of5_reader",
+                        "2of5_reader",
+                        "code_93_reader"
+                    ]
+                },
+                locate: true
+            }, (err) => {
+                if (err) {
+                    console.error('Quagga initialization error:', err);
+                    showAlert('خطأ في تهيئة قارئ الباركود التقليدي', 'warning');
+                    // Continue with QR only if available
+                    if (jsQRLoaded) {
+                        startQRScanning();
+                    }
+                    resolve();
+                    return;
                 }
-            },
-            locator: {
-                patchSize: "medium",
-                halfSample: true
-            },
-            numOfWorkers: 2,
-            frequency: 10,
-            decoder: {
-                readers: [
-                    "code_128_reader",
-                    "ean_reader",
-                    "ean_8_reader", 
-                    "code_39_reader",
-                    "code_39_vin_reader",
-                    "codabar_reader",
-                    "upc_reader",
-                    "upc_e_reader",
-                    "i2of5_reader",
-                    "2of5_reader",
-                    "code_93_reader"
-                ]
-            },
-            locate: true
-        }, (err) => {
-            if (err) {
-                console.error('Quagga initialization error:', err);
-                showAlert('خطأ في تهيئة قارئ الباركود التقليدي', 'warning');
-                // Continue with QR only
+                
+                console.log('Quagga initialized successfully');
+                
+                // Start Quagga for traditional barcodes
+                Quagga.start();
+                
+                // Handle traditional barcode detection
+                Quagga.onDetected((result) => {
+                    if (result && result.codeResult && result.codeResult.code) {
+                        console.log('Barcode detected:', result.codeResult.code);
+                        
+                        // Extract location information from QuaggaJS result
+                        let location = null;
+                        if (result.line && result.line.length >= 2) {
+                            const x1 = Math.min(result.line[0].x, result.line[1].x);
+                            const y1 = Math.min(result.line[0].y, result.line[1].y);
+                            const x2 = Math.max(result.line[0].x, result.line[1].x);
+                            const y2 = Math.max(result.line[0].y, result.line[1].y);
+                            
+                            location = {
+                                x: Math.max(0, x1 - 20),
+                                y: Math.max(0, y1 - 20),
+                                width: (x2 - x1) + 40,
+                                height: (y2 - y1) + 40
+                            };
+                        }
+                        
+                        handleCodeDetection(result.codeResult.code, 'باركود', location);
+                    }
+                });
+                
+                // Start QR Code scanning loop after a short delay if jsQR is available
+                setTimeout(() => {
+                    if (jsQRLoaded) {
+                        startQRScanning();
+                    } else {
+                        console.warn('jsQR not available, only traditional barcodes will be scanned');
+                        showAlert('تحذير: فقط الباركود التقليدي متاح للمسح', 'warning');
+                    }
+                    resolve();
+                }, 500);
+            });
+        } else {
+            // If Quagga is not available, try QR only
+            console.warn('Quagga not available, trying QR only');
+            if (jsQRLoaded) {
                 startQRScanning();
-                resolve();
+                showAlert('تحذير: فقط QR كود متاح للمسح', 'warning');
+            } else {
+                showAlert('خطأ: لا يمكن بدء المسح - لم يتم تحميل أي مكتبة', 'error');
+                reject(new Error('No scanning libraries available'));
                 return;
             }
-            
-            console.log('Quagga initialized successfully');
-            
-            // Start Quagga for traditional barcodes
-            Quagga.start();
-            
-            // Handle traditional barcode detection
-            Quagga.onDetected((result) => {
-                if (result && result.codeResult && result.codeResult.code) {
-                    console.log('Barcode detected:', result.codeResult.code);
-                    
-                    // Extract location information from QuaggaJS result
-                    let location = null;
-                    if (result.line && result.line.length >= 2) {
-                        const x1 = Math.min(result.line[0].x, result.line[1].x);
-                        const y1 = Math.min(result.line[0].y, result.line[1].y);
-                        const x2 = Math.max(result.line[0].x, result.line[1].x);
-                        const y2 = Math.max(result.line[0].y, result.line[1].y);
-                        
-                        location = {
-                            x: x1 - 20,
-                            y: y1 - 20,
-                            width: (x2 - x1) + 40,
-                            height: (y2 - y1) + 40
-                        };
-                    }
-                    
-                    handleCodeDetection(result.codeResult.code, 'باركود', location);
-                }
-            });
-            
-            // Start QR Code scanning loop after a short delay
-            setTimeout(() => {
-                startQRScanning();
-                resolve();
-            }, 500);
-        });
+            resolve();
+        }
     });
 }
 
 // QR Code scanning using jsQR
 function startQRScanning() {
     console.log('Starting QR Code scanning...');
+    
+    // Check if jsQR is loaded
+    if (typeof jsQR === 'undefined') {
+        console.error('jsQR library not loaded');
+        showAlert('مكتبة jsQR غير محملة بشكل صحيح', 'error');
+        return;
+    }
     
     const qrScanInterval = setInterval(() => {
         if (!isScanning) {
@@ -1541,60 +1613,98 @@ function startQRScanning() {
             return;
         }
         
-        if (video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0 && video.videoHeight > 0) {
+        // More robust video ready check
+        if (video.readyState === video.HAVE_ENOUGH_DATA && 
+            video.videoWidth > 0 && 
+            video.videoHeight > 0 &&
+            !video.paused && 
+            !video.ended) {
             scanForQRCode();
         }
-    }, 200); // Scan every 200ms for QR codes - faster scanning
+    }, 250); // Slightly slower interval for better performance
 }
 
 function scanForQRCode() {
     try {
-        // Create a temporary canvas for QR scanning
-        const qrCanvas = document.createElement('canvas');
-        const qrContext = qrCanvas.getContext('2d');
+        // Check if jsQR is available
+        if (typeof jsQR === 'undefined') {
+            console.warn('jsQR not available');
+            return;
+        }
         
-        qrCanvas.width = video.videoWidth;
-        qrCanvas.height = video.videoHeight;
+        // Prevent simultaneous code processing
+        if (isProcessingCode) {
+            return;
+        }
         
-        if (qrCanvas.width === 0 || qrCanvas.height === 0) {
+        // Use the main canvas instead of creating a new one
+        const context = canvas.getContext('2d');
+        
+        // Set canvas size to match video
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        if (canvas.width === 0 || canvas.height === 0) {
             return; // Skip if video not ready
         }
         
-        qrContext.drawImage(video, 0, 0, qrCanvas.width, qrCanvas.height);
+        // Draw video frame to canvas
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
         
-        // Get image data for jsQR
-        const imageData = qrContext.getImageData(0, 0, qrCanvas.width, qrCanvas.height);
+        // Get image data for jsQR with better error handling
+        let imageData;
+        try {
+            imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        } catch (e) {
+            console.debug('Failed to get image data:', e);
+            return;
+        }
         
-        // Scan for QR code with multiple attempts
+        // Validate image data
+        if (!imageData || !imageData.data || imageData.data.length === 0) {
+            console.debug('Invalid image data');
+            return;
+        }
+        
+        // Scan for QR code with enhanced settings
         const qrCode = jsQR(imageData.data, imageData.width, imageData.height, {
-            inversionAttempts: "attemptBoth"
+            inversionAttempts: "attemptBoth",
+            locateRegion: true
         });
         
-        if (qrCode && qrCode.data) {
+        if (qrCode && qrCode.data && qrCode.data.trim().length > 0) {
             console.log('QR Code detected:', qrCode.data);
             
             // Extract location information from jsQR result
             let location = null;
-            if (qrCode.location) {
-                const corners = qrCode.location;
-                const x = Math.min(corners.topLeftCorner.x, corners.topRightCorner.x, corners.bottomLeftCorner.x, corners.bottomRightCorner.x);
-                const y = Math.min(corners.topLeftCorner.y, corners.topRightCorner.y, corners.bottomLeftCorner.y, corners.bottomRightCorner.y);
-                const maxX = Math.max(corners.topLeftCorner.x, corners.topRightCorner.x, corners.bottomLeftCorner.x, corners.bottomRightCorner.x);
-                const maxY = Math.max(corners.topLeftCorner.y, corners.topRightCorner.y, corners.bottomLeftCorner.y, corners.bottomRightCorner.y);
-                
-                location = {
-                    x: x - 10,
-                    y: y - 10,
-                    width: (maxX - x) + 20,
-                    height: (maxY - y) + 20
-                };
+            if (qrCode.location && qrCode.location.topLeftCorner) {
+                try {
+                    const corners = qrCode.location;
+                    const x = Math.min(corners.topLeftCorner.x, corners.topRightCorner.x, corners.bottomLeftCorner.x, corners.bottomRightCorner.x);
+                    const y = Math.min(corners.topLeftCorner.y, corners.topRightCorner.y, corners.bottomLeftCorner.y, corners.bottomRightCorner.y);
+                    const maxX = Math.max(corners.topLeftCorner.x, corners.topRightCorner.x, corners.bottomLeftCorner.x, corners.bottomRightCorner.x);
+                    const maxY = Math.max(corners.topLeftCorner.y, corners.topRightCorner.y, corners.bottomLeftCorner.y, corners.bottomRightCorner.y);
+                    
+                    location = {
+                        x: Math.max(0, x - 10),
+                        y: Math.max(0, y - 10),
+                        width: (maxX - x) + 20,
+                        height: (maxY - y) + 20
+                    };
+                } catch (locationError) {
+                    console.debug('Error extracting QR location:', locationError);
+                }
             }
             
-            handleCodeDetection(qrCode.data, 'QR كود', location);
+            handleCodeDetection(qrCode.data.trim(), 'QR كود', location);
         }
     } catch (error) {
-        // Silent fail for QR scanning errors
-        console.debug('QR scan error (normal):', error);
+        // Better error logging for debugging
+        console.debug('QR scan error:', error.message || error);
+        // Only show user error if it's a critical issue
+        if (error.message && error.message.includes('jsQR')) {
+            showAlert('خطأ في مكتبة QR: ' + error.message, 'error');
+        }
     }
 }
 
@@ -1870,32 +1980,51 @@ window.resumeScanningAfterDuplicate = resumeScanningAfterDuplicate;
 
 // Universal Code Detection Handler (QR + Barcode)
 async function handleCodeDetection(code, codeType = 'كود', location = null) {
-    // Check for recent duplicate (within 20 seconds)
-    const recentDuplicate = findRecentDuplicate(code);
-    if (recentDuplicate) {
-        // Stop scanning and highlight in red
-        highlightDetectedCode(location, true, code, recentDuplicate);
-        showDuplicateAlert(code, recentDuplicate);
+    // Prevent simultaneous processing
+    if (isProcessingCode) {
+        console.debug('Code processing already in progress, ignoring:', code);
         return;
     }
     
-    // Normal highlighting for new code
-    if (location) {
-        highlightDetectedCode(location, false, code);
-    }
-    
-    // Add to recent scans for duplicate detection
-    addToRecentScans(code);
-    
-    // Prevent rapid duplicate scans
-    if (lastScannedCode === code && Date.now() - lastScannedTime < 2000) {
-        return;
-    }
-    
-    lastScannedCode = code;
-    lastScannedTime = Date.now();
+    // Set processing flag
+    isProcessingCode = true;
     
     try {
+        // Check if this code was scanned before (ever)
+        const existingScans = scannedResults.filter(result => result.code === code);
+        const isFirstTime = existingScans.length === 0;
+        
+        // Check for recent duplicate (within 20 seconds) to prevent rapid rescanning
+        const recentDuplicate = findRecentDuplicate(code);
+        if (recentDuplicate && recentDuplicate.user === currentUser.username) {
+            // Same user trying to scan the same code within 20 seconds - show alert only
+            highlightDetectedCode(location, true, code, recentDuplicate);
+            showDuplicateAlert(code, recentDuplicate);
+            isProcessingCode = false; // Reset flag before return
+            return;
+        }
+        
+        // Determine if this is a duplicate (not first time)
+        const isDuplicate = !isFirstTime;
+        
+        // Highlight based on whether it's duplicate or not
+        if (location) {
+            highlightDetectedCode(location, isDuplicate, code);
+        }
+        
+        // Add to recent scans for duplicate detection (20-second protection)
+        addToRecentScans(code);
+        
+        // Prevent rapid duplicate scans from same detection cycle
+        if (lastScannedCode === code && Date.now() - lastScannedTime < 2000) {
+            console.debug('Rapid duplicate scan prevented:', code);
+            isProcessingCode = false; // Reset flag before return
+            return;
+        }
+        
+        lastScannedCode = code;
+        lastScannedTime = Date.now();
+        
         showLoading(true);
         
         // Capture image with code info
@@ -1911,7 +2040,9 @@ async function handleCodeDetection(code, codeType = 'كود', location = null) {
             image: imageData,
             telegramStatus: 'pending', // pending, sending, success, failed
             telegramAttempts: 0,
-            lastAttemptTime: null
+            lastAttemptTime: null,
+            isDuplicate: isDuplicate, // Mark if this is a duplicate scan
+            duplicateCount: existingScans.length + 1 // Current total count for this code
         };
         
         // Add to results
@@ -1930,8 +2061,20 @@ async function handleCodeDetection(code, codeType = 'كود', location = null) {
             });
         }
         
-        // Success feedback
-        playSuccessSound();
+        // Success feedback with appropriate message
+        if (isDuplicate) {
+            showAlert(`تم مسح كود مكرر: ${code} (المرة رقم ${scanResult.duplicateCount})`, 'warning');
+        } else {
+            showAlert(`تم مسح كود جديد: ${code}`, 'success');
+        }
+        
+        // Show camera success indicator
+        showCameraSuccessIndicator(isDuplicate);
+        
+        playSuccessSound(isDuplicate);
+        
+        // Pause scanning briefly to show indicators
+        pauseScanningBriefly(isDuplicate ? 1500 : 1000);
         
         showLoading(false);
         
@@ -1939,6 +2082,9 @@ async function handleCodeDetection(code, codeType = 'كود', location = null) {
         console.error('Error processing code:', error);
         showAlert(`خطأ في معالجة ${codeType}`, 'error');
         showLoading(false);
+    } finally {
+        // Always reset the processing flag
+        isProcessingCode = false;
     }
 }
 
@@ -2148,22 +2294,21 @@ function drawBarcodePattern(context, width, barY, barHeight, padding) {
 
 // Results Management
 function displayResult(result) {
-    // Check if this code is a duplicate
-    const duplicateCount = scannedResults.filter(r => r.code === result.code).length;
-    const isDuplicate = duplicateCount > 1;
-    
     const resultItem = document.createElement('div');
-    resultItem.className = `result-item ${isDuplicate ? 'duplicate' : ''} telegram-${result.telegramStatus || 'pending'}`;
+    resultItem.className = `result-item ${result.isDuplicate ? 'duplicate' : ''} telegram-${result.telegramStatus || 'pending'}`;
     resultItem.setAttribute('data-result-id', result.id);
     
     const telegramStatusIndicator = getTelegramStatusIndicator(result.telegramStatus || 'pending', result.telegramAttempts || 0);
+    const duplicateIndicator = result.isDuplicate ? `<span class="duplicate-indicator">مكرر ×${result.duplicateCount}</span>` : '';
+    const statusBadge = result.isDuplicate ? '<span class="status-badge duplicate-status">مكرر</span>' : '<span class="status-badge new-status">جديد</span>';
     
     resultItem.innerHTML = `
         <div class="result-content">
             <div class="result-code">
-                ${isDuplicate ? `<span class="duplicate-indicator">مكرر ×${duplicateCount}</span>` : ''}
+                ${duplicateIndicator}
                 <span class="code-type-badge ${result.codeType && result.codeType.includes('QR') ? 'qr-badge' : 'barcode-badge'}">${result.codeType || 'كود'}</span>
                 <span class="code-text">${result.code}</span>
+                ${statusBadge}
                 ${telegramStatusIndicator}
             </div>
             <div class="result-time">${formatDateTime(result.timestamp)} - ${result.user}</div>
@@ -2178,7 +2323,7 @@ function displayResult(result) {
             <button class="btn btn-secondary" onclick="copyCode('${result.code}')">
                 <i class="fas fa-copy"></i> نسخ
             </button>
-            ${isDuplicate ? `<button class="btn btn-warning" onclick="showDuplicatesForCode('${result.code}')">
+            ${result.isDuplicate ? `<button class="btn btn-warning" onclick="showDuplicatesForCode('${result.code}')">
                 <i class="fas fa-search"></i> المكررات
             </button>` : ''}
         </div>
@@ -2186,8 +2331,8 @@ function displayResult(result) {
     
     resultsList.insertBefore(resultItem, resultsList.firstChild);
     
-    // Update duplicate indicators for all instances of this code
-    if (isDuplicate) {
+    // Update duplicate indicators for all instances of this code if duplicate
+    if (result.isDuplicate) {
         updateDuplicateIndicators(result.code);
     }
 }
@@ -2491,14 +2636,38 @@ async function sendToTelegram(result, isRetry = false) {
         const codeIcon = result.codeType && result.codeType.includes('QR') ? '📱' : '🔢';
         const systemName = result.codeType && result.codeType.includes('QR') ? 'قارئ الأكواد الذكي' : 'قارئ الباركود المتطور';
         
-        formData.append('caption', `${codeIcon} **مسح ${result.codeType || 'الكود'}**
+        // Build duplicate information
+        let duplicateInfo = '';
+        if (result.isDuplicate) {
+            const allScansOfThisCode = scannedResults.filter(r => r.code === result.code);
+            const previousScans = allScansOfThisCode.filter(r => r.timestamp < result.timestamp);
+            
+            duplicateInfo = `
+🔄 **تحذير: كود مكرر!**
+📈 **رقم المسحة:** ${result.duplicateCount} من إجمالي ${allScansOfThisCode.length}
+📝 **المسحات السابقة:**`;
+            
+            previousScans.slice(-3).forEach((scan, index) => {
+                duplicateInfo += `
+   ${index + 1}. ${scan.user} - ${formatDateTimeBaghdad(scan.timestamp)}`;
+            });
+            
+            if (previousScans.length > 3) {
+                duplicateInfo += `
+   ... و ${previousScans.length - 3} مسحات أخرى`;
+            }
+            
+            duplicateInfo += '\n';
+        }
+        
+        formData.append('caption', `${codeIcon} **مسح ${result.codeType || 'الكود'}** ${result.isDuplicate ? '⚠️ **مكرر**' : '✨ **جديد**'}
 
 ${codeIcon} **الكود المسوح:** \`${result.code}\`
 🏷️ **نوع الكود:** ${result.codeType || 'غير محدد'}
 👤 **المستخدم:** ${result.user}
 🕐 **التاريخ والوقت:** ${formatDateTimeBaghdad(result.timestamp)}
 🌍 **الموقع:** بغداد، العراق
-📊 **رقم المحاولة:** ${result.telegramAttempts}
+📊 **رقم المحاولة:** ${result.telegramAttempts}${duplicateInfo}
 
 ✅ تم التقاط هذه الصورة تلقائياً بواسطة نظام ${systemName}`);
         
@@ -2726,17 +2895,164 @@ function showLoading(show) {
     loadingOverlay.style.display = show ? 'flex' : 'none';
 }
 
-function playSuccessSound() {
-    // Vibration feedback if available
-    if (navigator.vibrate) {
-        navigator.vibrate(200);
+// Camera Success Indicator
+function showCameraSuccessIndicator(isDuplicate = false) {
+    // Remove any existing indicator
+    const existingIndicator = document.querySelector('.camera-success-indicator');
+    if (existingIndicator) {
+        existingIndicator.remove();
     }
     
-    // Visual feedback
-    document.body.style.backgroundColor = '#28a745';
+    // Create success indicator overlay
+    const indicator = document.createElement('div');
+    indicator.className = 'camera-success-indicator';
+    
+    // Different styles for new vs duplicate
+    const iconClass = isDuplicate ? 'fas fa-exclamation-triangle' : 'fas fa-check-circle';
+    const iconColor = isDuplicate ? '#ffc107' : '#28a745';
+    const message = isDuplicate ? 'مكرر!' : 'تم المسح!';
+    const bgColor = isDuplicate ? 'rgba(255, 193, 7, 0.9)' : 'rgba(40, 167, 69, 0.9)';
+    
+    indicator.innerHTML = `
+        <div class="success-content">
+            <i class="${iconClass}" style="color: ${iconColor};"></i>
+            <span class="success-message">${message}</span>
+        </div>
+    `;
+    
+    // Style the indicator
+    indicator.style.position = 'absolute';
+    indicator.style.top = '0';
+    indicator.style.left = '0';
+    indicator.style.right = '0';
+    indicator.style.bottom = '0';
+    indicator.style.background = bgColor;
+    indicator.style.display = 'flex';
+    indicator.style.alignItems = 'center';
+    indicator.style.justifyContent = 'center';
+    indicator.style.zIndex = '1001';
+    indicator.style.borderRadius = '15px';
+    indicator.style.animation = isDuplicate ? 'cameraWarningFlash 1.5s ease-out' : 'cameraSuccessFlash 1s ease-out';
+    
+    // Add to camera container
+    if (cameraContainer && cameraContainer.style.display !== 'none') {
+        cameraContainer.appendChild(indicator);
+        
+        // Remove after animation
+        setTimeout(() => {
+            if (indicator.parentNode) {
+                indicator.remove();
+            }
+        }, isDuplicate ? 1500 : 1000);
+    }
+    
+    // Add camera frame flash effect
+    showCameraFrameFlash(isDuplicate);
+    
+    // Add center ripple effect
+    showCameraCenterRipple(isDuplicate);
+}
+
+function showCameraFrameFlash(isDuplicate = false) {
+    // Flash the camera frame
+    const frameColor = isDuplicate ? '#ffc107' : '#28a745';
+    const originalBorder = cameraContainer.style.border;
+    
+    // Flash effect
+    cameraContainer.style.border = `4px solid ${frameColor}`;
+    cameraContainer.style.boxShadow = `0 0 20px ${frameColor}`;
+    cameraContainer.style.transition = 'all 0.1s ease';
+    
+    setTimeout(() => {
+        cameraContainer.style.border = originalBorder;
+        cameraContainer.style.boxShadow = '';
+        cameraContainer.style.transition = '';
+    }, isDuplicate ? 800 : 500);
+}
+
+function showCameraCenterRipple(isDuplicate = false) {
+    // Remove any existing ripple
+    const existingRipple = document.querySelector('.camera-center-ripple');
+    if (existingRipple) {
+        existingRipple.remove();
+    }
+    
+    // Create ripple element
+    const ripple = document.createElement('div');
+    ripple.className = 'camera-center-ripple';
+    
+    const rippleColor = isDuplicate ? 'rgba(255, 193, 7, 0.6)' : 'rgba(40, 167, 69, 0.6)';
+    const animationName = isDuplicate ? 'centerRippleWarning' : 'centerRippleSuccess';
+    
+    // Style the ripple
+    ripple.style.position = 'absolute';
+    ripple.style.top = '50%';
+    ripple.style.left = '50%';
+    ripple.style.width = '20px';
+    ripple.style.height = '20px';
+    ripple.style.background = rippleColor;
+    ripple.style.borderRadius = '50%';
+    ripple.style.transform = 'translate(-50%, -50%)';
+    ripple.style.zIndex = '1000';
+    ripple.style.pointerEvents = 'none';
+    ripple.style.animation = `${animationName} 0.8s ease-out`;
+    
+    // Add to camera container
+    if (cameraContainer && cameraContainer.style.display !== 'none') {
+        cameraContainer.appendChild(ripple);
+        
+        // Remove after animation
+        setTimeout(() => {
+            if (ripple.parentNode) {
+                ripple.remove();
+            }
+        }, 800);
+    }
+}
+
+function pauseScanningBriefly(duration = 1000) {
+    const originalIsScanning = isScanning;
+    
+    if (originalIsScanning) {
+        // Temporarily pause scanning
+        isScanning = false;
+        
+        // Resume after duration
+        setTimeout(() => {
+            if (originalIsScanning) {
+                isScanning = true;
+            }
+        }, duration);
+    }
+}
+
+function playSuccessSound(isDuplicate = false) {
+    // Different vibration patterns for new vs duplicate
+    if (navigator.vibrate) {
+        if (isDuplicate) {
+            // Double short vibration for duplicates
+            navigator.vibrate([100, 50, 100]);
+        } else {
+            // Single longer vibration for new codes
+            navigator.vibrate(300);
+        }
+    }
+    
+    // Different visual feedback colors
+    const bgColor = isDuplicate ? '#ffc107' : '#28a745';
+    document.body.style.backgroundColor = bgColor;
+    document.body.style.transition = 'background-color 0.1s ease';
+    
     setTimeout(() => {
         document.body.style.backgroundColor = '';
-    }, 200);
+        document.body.style.transition = '';
+    }, isDuplicate ? 300 : 200);
+    
+    // Add body flash effect
+    document.body.style.boxShadow = `inset 0 0 50px ${bgColor}`;
+    setTimeout(() => {
+        document.body.style.boxShadow = '';
+    }, 100);
 }
 
 function viewImage(resultId) {
