@@ -287,13 +287,17 @@ function initializeDOMElements() {
     debugBtn = document.getElementById('debugBtn');
     
     // Check critical elements
-    const criticalElements = [
-        'loginBtn', 'ownerLoginBtn', 'showOwnerLogin', 'usernameInput', 'passwordInput', 'debugBtn'
-    ];
+    const criticalElements = {
+        loginBtn,
+        ownerLoginBtn,
+        showOwnerLogin,
+        usernameInput,
+        passwordInput,
+        debugBtn
+    };
     
     console.log('🔍 Checking critical elements:');
-    criticalElements.forEach(elementName => {
-        const element = eval(elementName);
+    Object.entries(criticalElements).forEach(([elementName, element]) => {
         if (element) {
             console.log(`✅ ${elementName}: Found`);
         } else {

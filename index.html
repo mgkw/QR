@@ -21,8 +21,8 @@
                 </div>
                 <div id="loginSection" class="login-section">
                     <form class="login-form" id="loginForm" onsubmit="return false;">
-                        <input type="text" id="usernameInput" placeholder="اسم المستخدم" class="input-field">
-                        <input type="password" id="passwordInput" placeholder="كلمة المرور (للأونر فقط)" class="input-field" style="display: none;">
+                        <input type="text" id="usernameInput" placeholder="اسم المستخدم" class="input-field" autocomplete="username">
+                        <input type="password" id="passwordInput" placeholder="كلمة المرور (للأونر فقط)" class="input-field" autocomplete="current-password" style="display: none;">
                         
                         <div class="remember-me-section">
                             <label class="remember-checkbox">
@@ -126,7 +126,7 @@
                     <form class="modal-body" onsubmit="return false;">
                         <div class="form-group">
                             <label for="botToken">توكن البوت:</label>
-                            <input type="password" id="botToken" class="input-field" placeholder="أدخل توكن البوت">
+                            <input type="password" id="botToken" class="input-field" placeholder="أدخل توكن البوت" autocomplete="off">
                         </div>
                         <div class="form-group">
                             <label for="chatId">آيدي المجموعة:</label>
