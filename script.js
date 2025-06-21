@@ -8,6 +8,8 @@ let lastScannedCode = null;
 let lastScannedTime = 0;
 let scannedResults = [];
 let registeredUsers = [];
+let recentScans = []; // For 20-second duplicate detection
+let highlightOverlay = null; // For barcode highlighting
 
 // Owner Settings
 const OWNER_PASSWORD = "owner123"; // يمكن تغييرها لاحقاً
@@ -1498,7 +1500,24 @@ async function initializeDualScanning() {
             Quagga.onDetected((result) => {
                 if (result && result.codeResult && result.codeResult.code) {
                     console.log('Barcode detected:', result.codeResult.code);
-                    handleCodeDetection(result.codeResult.code, 'باركود');
+                    
+                    // Extract location information from QuaggaJS result
+                    let location = null;
+                    if (result.line && result.line.length >= 2) {
+                        const x1 = Math.min(result.line[0].x, result.line[1].x);
+                        const y1 = Math.min(result.line[0].y, result.line[1].y);
+                        const x2 = Math.max(result.line[0].x, result.line[1].x);
+                        const y2 = Math.max(result.line[0].y, result.line[1].y);
+                        
+                        location = {
+                            x: x1 - 20,
+                            y: y1 - 20,
+                            width: (x2 - x1) + 40,
+                            height: (y2 - y1) + 40
+                        };
+                    }
+                    
+                    handleCodeDetection(result.codeResult.code, 'باركود', location);
                 }
             });
             
@@ -1553,7 +1572,25 @@ function scanForQRCode() {
         
         if (qrCode && qrCode.data) {
             console.log('QR Code detected:', qrCode.data);
-            handleCodeDetection(qrCode.data, 'QR كود');
+            
+            // Extract location information from jsQR result
+            let location = null;
+            if (qrCode.location) {
+                const corners = qrCode.location;
+                const x = Math.min(corners.topLeftCorner.x, corners.topRightCorner.x, corners.bottomLeftCorner.x, corners.bottomRightCorner.x);
+                const y = Math.min(corners.topLeftCorner.y, corners.topRightCorner.y, corners.bottomLeftCorner.y, corners.bottomRightCorner.y);
+                const maxX = Math.max(corners.topLeftCorner.x, corners.topRightCorner.x, corners.bottomLeftCorner.x, corners.bottomRightCorner.x);
+                const maxY = Math.max(corners.topLeftCorner.y, corners.topRightCorner.y, corners.bottomLeftCorner.y, corners.bottomRightCorner.y);
+                
+                location = {
+                    x: x - 10,
+                    y: y - 10,
+                    width: (maxX - x) + 20,
+                    height: (maxY - y) + 20
+                };
+            }
+            
+            handleCodeDetection(qrCode.data, 'QR كود', location);
         }
     } catch (error) {
         // Silent fail for QR scanning errors
@@ -1575,7 +1612,12 @@ function stopScanning() {
         stream = null;
     }
     
+    // Remove any highlights and clear recent scans
+    removeHighlight();
+    recentScans = [];
+    
     cameraContainer.style.display = 'none';
+    flashEnabled = false;
     updateScanButtons();
     showAlert('تم إيقاف المسح المتطور', 'info');
 }
@@ -1635,9 +1677,217 @@ function updateFlashButton() {
     }
 }
 
+// Recent Scans Management (20-second duplicate detection)
+function findRecentDuplicate(code) {
+    const now = Date.now();
+    // Clean old scans first (older than 20 seconds)
+    recentScans = recentScans.filter(scan => now - scan.timestamp < 20000);
+    
+    // Find duplicate within last 20 seconds
+    return recentScans.find(scan => scan.code === code);
+}
+
+function addToRecentScans(code) {
+    const now = Date.now();
+    // Clean old scans first
+    recentScans = recentScans.filter(scan => now - scan.timestamp < 20000);
+    
+    // Add current scan
+    recentScans.push({
+        code: code,
+        timestamp: now,
+        user: currentUser.username
+    });
+}
+
+// Visual Code Highlighting
+function highlightDetectedCode(location, isDuplicate = false, code = '', duplicateInfo = null) {
+    // Remove existing highlight
+    removeHighlight();
+    
+    if (!location) return;
+    
+    // Create highlight overlay
+    highlightOverlay = document.createElement('div');
+    highlightOverlay.className = 'code-highlight';
+    
+    // Position and style the highlight
+    const rect = {
+        x: location.x || video.videoWidth * 0.1,
+        y: location.y || video.videoHeight * 0.1,
+        width: location.width || video.videoWidth * 0.8,
+        height: location.height || video.videoHeight * 0.8
+    };
+    
+    // Scale to video display size
+    const videoRect = video.getBoundingClientRect();
+    const scaleX = videoRect.width / video.videoWidth;
+    const scaleY = videoRect.height / video.videoHeight;
+    
+    highlightOverlay.style.position = 'absolute';
+    highlightOverlay.style.left = (rect.x * scaleX) + 'px';
+    highlightOverlay.style.top = (rect.y * scaleY) + 'px';
+    highlightOverlay.style.width = (rect.width * scaleX) + 'px';
+    highlightOverlay.style.height = (rect.height * scaleY) + 'px';
+    highlightOverlay.style.border = isDuplicate ? '4px solid #dc3545' : '3px solid #28a745';
+    highlightOverlay.style.backgroundColor = isDuplicate ? 'rgba(220, 53, 69, 0.2)' : 'rgba(40, 167, 69, 0.2)';
+    highlightOverlay.style.borderRadius = '8px';
+    highlightOverlay.style.zIndex = '1000';
+    highlightOverlay.style.pointerEvents = 'none';
+    highlightOverlay.style.animation = isDuplicate ? 'highlightPulseRed 1s infinite' : 'highlightPulseGreen 0.5s ease-out';
+    
+    // Add code text
+    const codeText = document.createElement('div');
+    codeText.style.position = 'absolute';
+    codeText.style.top = '-30px';
+    codeText.style.left = '0';
+    codeText.style.background = isDuplicate ? '#dc3545' : '#28a745';
+    codeText.style.color = 'white';
+    codeText.style.padding = '4px 8px';
+    codeText.style.borderRadius = '4px';
+    codeText.style.fontSize = '12px';
+    codeText.style.fontWeight = 'bold';
+    codeText.textContent = isDuplicate ? `DUPLICATE: ${code}` : code;
+    
+    highlightOverlay.appendChild(codeText);
+    
+    // Add to camera container
+    cameraContainer.style.position = 'relative';
+    cameraContainer.appendChild(highlightOverlay);
+    
+    // Auto remove after delay
+    setTimeout(() => {
+        if (!isDuplicate) {
+            removeHighlight();
+        }
+    }, isDuplicate ? 10000 : 2000); // Keep duplicate highlight longer
+}
+
+function removeHighlight() {
+    if (highlightOverlay && highlightOverlay.parentNode) {
+        highlightOverlay.parentNode.removeChild(highlightOverlay);
+        highlightOverlay = null;
+    }
+}
+
+// Duplicate Alert System
+function showDuplicateAlert(code, duplicateInfo) {
+    // Pause scanning
+    const wasScanning = isScanning;
+    if (wasScanning) {
+        // Temporarily pause without changing UI
+        isScanning = false;
+    }
+    
+    // Find the actual scan result for this code
+    const originalScan = scannedResults.find(result => 
+        result.code === code && 
+        result.user === duplicateInfo.user
+    );
+    
+    // Calculate time difference
+    const timeDiff = Date.now() - duplicateInfo.timestamp;
+    const secondsAgo = Math.floor(timeDiff / 1000);
+    
+    // Create duplicate alert modal
+    const modal = document.createElement('div');
+    modal.className = 'modal duplicate-alert-modal';
+    modal.style.zIndex = '10002';
+    
+    modal.innerHTML = `
+        <div class="modal-content duplicate-alert-content">
+            <div class="modal-header duplicate-alert-header">
+                <h3><i class="fas fa-exclamation-triangle"></i> تحذير: كود مكرر!</h3>
+                <span class="close" onclick="this.closest('.modal').remove(); resumeScanningAfterDuplicate(${wasScanning})">&times;</span>
+            </div>
+            <div class="modal-body duplicate-alert-body">
+                <div class="duplicate-alert-info">
+                    <div class="duplicate-code-large">${code}</div>
+                    <div class="duplicate-warning">
+                        <i class="fas fa-clock"></i>
+                        تم مسح هذا الكود قبل <strong>${secondsAgo} seconds</strong> بواسطة <strong>${duplicateInfo.user}</strong>
+                    </div>
+                </div>
+                
+                ${originalScan ? `
+                <div class="duplicate-image-section">
+                    <h4><i class="fas fa-image"></i> الصورة الأصلية:</h4>
+                    <div class="duplicate-original-image">
+                        <img src="${originalScan.image}" alt="الصورة الأصلية" onclick="viewFullImageModal('${originalScan.id}')">
+                        <div class="duplicate-image-info">
+                            <div><strong>المستخدم:</strong> ${originalScan.user}</div>
+                            <div><strong>التاريخ:</strong> ${formatDateTimeEnglish(originalScan.timestamp)}</div>
+                            <div><strong>النوع:</strong> ${originalScan.codeType || 'Code'}</div>
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
+                
+                <div class="duplicate-actions-section">
+                    <button class="btn btn-success" onclick="this.closest('.modal').remove(); resumeScanningAfterDuplicate(${wasScanning})">
+                        <i class="fas fa-play"></i> Continue Scanning
+                    </button>
+                    <button class="btn btn-warning" onclick="this.closest('.modal').remove(); resumeScanningAfterDuplicate(false)">
+                        <i class="fas fa-stop"></i> Stop Scanning
+                    </button>
+                    ${originalScan ? `
+                    <button class="btn btn-info" onclick="viewFullImageModal('${originalScan.id}')">
+                        <i class="fas fa-expand"></i> View Full Image
+                    </button>
+                    ` : ''}
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.style.display = 'block';
+    
+    // Play warning sound/vibration
+    if (navigator.vibrate) {
+        navigator.vibrate([200, 100, 200, 100, 200]);
+    }
+    
+    // Close on background click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+            resumeScanningAfterDuplicate(wasScanning);
+        }
+    });
+}
+
+// Resume scanning after duplicate alert
+function resumeScanningAfterDuplicate(shouldResume) {
+    removeHighlight();
+    if (shouldResume) {
+        isScanning = true;
+    }
+}
+
+// Make function global for onclick
+window.resumeScanningAfterDuplicate = resumeScanningAfterDuplicate;
+
 // Universal Code Detection Handler (QR + Barcode)
-async function handleCodeDetection(code, codeType = 'كود') {
-    // Prevent duplicate scans within 2 seconds
+async function handleCodeDetection(code, codeType = 'كود', location = null) {
+    // Check for recent duplicate (within 20 seconds)
+    const recentDuplicate = findRecentDuplicate(code);
+    if (recentDuplicate) {
+        // Stop scanning and highlight in red
+        highlightDetectedCode(location, true, code, recentDuplicate);
+        showDuplicateAlert(code, recentDuplicate);
+        return;
+    }
+    
+    // Normal highlighting for new code
+    if (location) {
+        highlightDetectedCode(location, false, code);
+    }
+    
+    // Add to recent scans for duplicate detection
+    addToRecentScans(code);
+    
+    // Prevent rapid duplicate scans
     if (lastScannedCode === code && Date.now() - lastScannedTime < 2000) {
         return;
     }
@@ -2424,6 +2674,20 @@ function formatTimeOnly(isoString) {
     });
 }
 
+function formatDateTimeEnglish(isoString) {
+    const date = new Date(isoString);
+    return date.toLocaleString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZone: 'Asia/Baghdad',
+        hour12: false
+    });
+}
+
 function dataURLtoBlob(dataURL) {
     const arr = dataURL.split(',');
     const mime = arr[0].match(/:(.*?);/)[1];
@@ -2534,4 +2798,10 @@ window.addEventListener('click', (e) => {
     if (e.target === detailedStatsModal) {
         closeDetailedStatsModal();
     }
+});
+
+// Clean up when page is about to unload
+window.addEventListener('beforeunload', () => {
+    removeHighlight();
+    recentScans = [];
 }); 
