@@ -316,26 +316,25 @@ app.post('/api/logout', async (req, res) => {
 });
 
 // التحقق من صحة الجلسة
-app.post('/api/verify-session', (req, res) => {
-  const { sessionId } = req.body;
+app.post('/api/verify-session', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
 
-  if (!sessionId) {
-    return res.status(401).json({ success: false, message: 'معرف الجلسة مطلوب' });
-  }
-
-  db.get(`SELECT * FROM user_sessions WHERE id = ? AND expires_at > CURRENT_TIMESTAMP`, 
-         [sessionId], (err, session) => {
-    if (err) {
-      console.error('خطأ في التحقق من الجلسة:', err);
-      return res.status(500).json({ success: false, message: 'خطأ في الخادم' });
+    if (!sessionId) {
+      return res.status(401).json({ success: false, message: 'معرف الجلسة مطلوب' });
     }
+
+    const session = await executeGet(
+      `SELECT * FROM user_sessions WHERE id = ? AND expires_at > CURRENT_TIMESTAMP`, 
+      [sessionId]
+    );
 
     if (!session) {
       return res.status(401).json({ success: false, message: 'الجلسة منتهية الصلاحية' });
     }
 
     // تحديث آخر نشاط
-    db.run("UPDATE user_sessions SET last_activity = CURRENT_TIMESTAMP WHERE id = ?", [sessionId]);
+    await executeRun("UPDATE user_sessions SET last_activity = CURRENT_TIMESTAMP WHERE id = ?", [sessionId]);
 
     res.json({
       success: true,
@@ -345,66 +344,75 @@ app.post('/api/verify-session', (req, res) => {
         isOwner: session.is_owner
       }
     });
-  });
+    
+  } catch (error) {
+    console.error('خطأ في التحقق من الجلسة:', error);
+    res.status(500).json({ success: false, message: 'خطأ في الخادم' });
+  }
 });
 
 // الحصول على جميع المستخدمين (للأونر فقط)
-app.get('/api/users', authenticateOwner, (req, res) => {
-  db.all("SELECT id, username, created_at, created_by, last_login, is_active FROM users WHERE is_owner = 0", 
-         (err, users) => {
-    if (err) {
-      console.error('خطأ في جلب المستخدمين:', err);
-      return res.status(500).json({ success: false, message: 'خطأ في الخادم' });
-    }
+app.get('/api/users', authenticateOwner, async (req, res) => {
+  try {
+    const users = await executeQuery(
+      "SELECT id, username, created_at, created_by, last_login, is_active FROM users WHERE is_owner = 0"
+    );
 
     res.json({ success: true, users });
-  });
+  } catch (error) {
+    console.error('خطأ في جلب المستخدمين:', error);
+    res.status(500).json({ success: false, message: 'خطأ في الخادم' });
+  }
 });
 
 // إضافة مستخدم جديد (للأونر فقط)
-app.post('/api/users', authenticateOwner, (req, res) => {
-  const { username } = req.body;
-  const createdBy = req.user.username;
+app.post('/api/users', authenticateOwner, async (req, res) => {
+  try {
+    const { username } = req.body;
+    const createdBy = req.user.username;
 
-  if (!username) {
-    return res.status(400).json({ success: false, message: 'اسم المستخدم مطلوب' });
-  }
-
-  db.run("INSERT INTO users (username, created_by) VALUES (?, ?)", 
-         [username, createdBy], function(err) {
-    if (err) {
-      if (err.code === 'SQLITE_CONSTRAINT') {
-        return res.status(400).json({ success: false, message: 'اسم المستخدم موجود بالفعل' });
-      }
-      console.error('خطأ في إضافة المستخدم:', err);
-      return res.status(500).json({ success: false, message: 'خطأ في الخادم' });
+    if (!username) {
+      return res.status(400).json({ success: false, message: 'اسم المستخدم مطلوب' });
     }
+
+    // التحقق من وجود المستخدم أولاً
+    const existingUser = await executeGet("SELECT id FROM users WHERE username = ?", [username]);
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: 'اسم المستخدم موجود بالفعل' });
+    }
+
+    await executeRun("INSERT INTO users (username, created_by) VALUES (?, ?)", [username, createdBy]);
 
     res.json({ 
       success: true, 
-      message: `تم إضافة المستخدم "${username}" بنجاح`,
-      userId: this.lastID 
+      message: `تم إضافة المستخدم "${username}" بنجاح`
     });
-  });
+
+  } catch (error) {
+    console.error('خطأ في إضافة المستخدم:', error);
+    res.status(500).json({ success: false, message: 'خطأ في الخادم' });
+  }
 });
 
 // حذف مستخدم (للأونر فقط)
-app.delete('/api/users/:username', authenticateOwner, (req, res) => {
-  const { username } = req.params;
+app.delete('/api/users/:username', authenticateOwner, async (req, res) => {
+  try {
+    const { username } = req.params;
 
-  db.run("UPDATE users SET is_active = 0 WHERE username = ? AND is_owner = 0", 
-         [username], function(err) {
-    if (err) {
-      console.error('خطأ في حذف المستخدم:', err);
-      return res.status(500).json({ success: false, message: 'خطأ في الخادم' });
-    }
-
-    if (this.changes === 0) {
+    // التحقق من وجود المستخدم أولاً
+    const user = await executeGet("SELECT id FROM users WHERE username = ? AND is_owner = 0", [username]);
+    if (!user) {
       return res.status(404).json({ success: false, message: 'المستخدم غير موجود' });
     }
 
+    await executeRun("UPDATE users SET is_active = 0 WHERE username = ? AND is_owner = 0", [username]);
+
     res.json({ success: true, message: `تم حذف المستخدم "${username}" بنجاح` });
-  });
+
+  } catch (error) {
+    console.error('خطأ في حذف المستخدم:', error);
+    res.status(500).json({ success: false, message: 'خطأ في الخادم' });
+  }
 });
 
 // حفظ مسحة جديدة
@@ -432,66 +440,54 @@ app.post('/api/scans', authenticateUser, async (req, res) => {
     // التحقق من التكرار خلال 20 ثانية
     const twentySecondsAgo = new Date(Date.now() - 20000).toISOString();
     
-    db.get(`SELECT * FROM scans WHERE barcode = ? AND scan_timestamp > ?`, 
-           [barcode, twentySecondsAgo], (err, recentScan) => {
-      if (err) {
-        console.error('خطأ في البحث عن التكرار:', err);
-        return res.status(500).json({ success: false, message: 'خطأ في الخادم' });
+    const recentScan = await executeGet(
+      `SELECT * FROM scans WHERE barcode = ? AND scan_timestamp > ?`, 
+      [barcode, twentySecondsAgo]
+    );
+
+    const isDuplicate = !!recentScan;
+
+    // حساب عدد التكرارات الإجمالي
+    const countResult = await executeGet(`SELECT COUNT(*) as count FROM scans WHERE barcode = ?`, [barcode]);
+    const duplicateCount = (countResult.count || 0) + 1;
+
+    // حفظ المسحة
+    await executeRun(
+      `INSERT INTO scans (id, barcode, code_type, user_id, username, image_data_url, 
+                         is_duplicate, duplicate_count, baghdad_time)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [scanId, barcode, codeType || 'كود', userId, username, imageDataUrl, 
+       isDuplicate, duplicateCount, baghdadTime]
+    );
+
+    let response = {
+      success: true,
+      message: 'تم حفظ المسحة بنجاح',
+      scan: {
+        id: scanId,
+        barcode,
+        codeType: codeType || 'كود',
+        username,
+        isDuplicate,
+        duplicateCount,
+        baghdadTime
       }
+    };
 
-      const isDuplicate = !!recentScan;
+    // إذا كان مكرر، أرسل معلومات المسحة الأصلية
+    if (isDuplicate && recentScan) {
+      response.recentScan = {
+        username: recentScan.username,
+        scanTime: recentScan.scan_timestamp,
+        imageDataUrl: recentScan.image_data_url,
+        timeDiff: Math.floor((Date.now() - new Date(recentScan.scan_timestamp).getTime()) / 1000)
+      };
+    }
 
-      // حساب عدد التكرارات الإجمالي
-      db.get(`SELECT COUNT(*) as count FROM scans WHERE barcode = ?`, [barcode], (err, countResult) => {
-        if (err) {
-          console.error('خطأ في حساب التكرارات:', err);
-          return res.status(500).json({ success: false, message: 'خطأ في الخادم' });
-        }
+    res.json(response);
 
-        const duplicateCount = (countResult.count || 0) + 1;
-
-        // حفظ المسحة
-        db.run(`INSERT INTO scans (id, barcode, code_type, user_id, username, image_data_url, 
-                                   is_duplicate, duplicate_count, baghdad_time)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [scanId, barcode, codeType || 'كود', userId, username, imageDataUrl, 
-                 isDuplicate, duplicateCount, baghdadTime], (err) => {
-          if (err) {
-            console.error('خطأ في حفظ المسحة:', err);
-            return res.status(500).json({ success: false, message: 'خطأ في حفظ المسحة' });
-          }
-
-          let response = {
-            success: true,
-            message: 'تم حفظ المسحة بنجاح',
-            scan: {
-              id: scanId,
-              barcode,
-              codeType: codeType || 'كود',
-              username,
-              isDuplicate,
-              duplicateCount,
-              baghdadTime
-            }
-          };
-
-          // إذا كان مكرر، أرسل معلومات المسحة الأصلية
-          if (isDuplicate && recentScan) {
-            response.recentScan = {
-              username: recentScan.username,
-              scanTime: recentScan.scan_timestamp,
-              imageDataUrl: recentScan.image_data_url,
-              timeDiff: Math.floor((Date.now() - new Date(recentScan.scan_timestamp).getTime()) / 1000)
-            };
-          }
-
-          res.json(response);
-
-          // إرسال إلى التليجرام تلقائياً إذا تم تفعيله
-          sendToTelegramAsync(scanId, barcode, imageDataUrl);
-        });
-      });
-    });
+    // إرسال إلى التليجرام تلقائياً إذا تم تفعيله
+    sendToTelegramAsync(scanId, barcode, imageDataUrl);
   } catch (error) {
     console.error('خطأ في حفظ المسحة:', error);
     res.status(500).json({ success: false, message: 'خطأ في الخادم' });
@@ -499,50 +495,51 @@ app.post('/api/scans', authenticateUser, async (req, res) => {
 });
 
 // الحصول على جميع المسحات
-app.get('/api/scans', authenticateUser, (req, res) => {
-  const { startDate, endDate, userId: filterUserId } = req.query;
-  const isOwner = req.user.isOwner;
-  
-  let query = "SELECT * FROM scans";
-  let params = [];
-  let conditions = [];
+app.get('/api/scans', authenticateUser, async (req, res) => {
+  try {
+    const { startDate, endDate, userId: filterUserId } = req.query;
+    const isOwner = req.user.isOwner;
+    
+    let query = "SELECT * FROM scans";
+    let params = [];
+    let conditions = [];
 
-  // إذا لم يكن أونر، يرى مسحاته فقط
-  if (!isOwner) {
-    conditions.push("user_id = ?");
-    params.push(req.user.userId);
-  }
-
-  // فلتر المستخدم (للأونر فقط)
-  if (isOwner && filterUserId) {
-    conditions.push("user_id = ?");
-    params.push(filterUserId);
-  }
-
-  // فلتر التاريخ
-  if (startDate) {
-    conditions.push("DATE(scan_timestamp) >= ?");
-    params.push(startDate);
-  }
-  if (endDate) {
-    conditions.push("DATE(scan_timestamp) <= ?");
-    params.push(endDate);
-  }
-
-  if (conditions.length > 0) {
-    query += " WHERE " + conditions.join(" AND ");
-  }
-
-  query += " ORDER BY scan_timestamp DESC";
-
-  db.all(query, params, (err, scans) => {
-    if (err) {
-      console.error('خطأ في جلب المسحات:', err);
-      return res.status(500).json({ success: false, message: 'خطأ في الخادم' });
+    // إذا لم يكن أونر، يرى مسحاته فقط
+    if (!isOwner) {
+      conditions.push("user_id = ?");
+      params.push(req.user.userId);
     }
 
+    // فلتر المستخدم (للأونر فقط)
+    if (isOwner && filterUserId) {
+      conditions.push("user_id = ?");
+      params.push(filterUserId);
+    }
+
+    // فلتر التاريخ
+    if (startDate) {
+      conditions.push("DATE(scan_timestamp) >= ?");
+      params.push(startDate);
+    }
+    if (endDate) {
+      conditions.push("DATE(scan_timestamp) <= ?");
+      params.push(endDate);
+    }
+
+    if (conditions.length > 0) {
+      query += " WHERE " + conditions.join(" AND ");
+    }
+
+    query += " ORDER BY scan_timestamp DESC";
+
+    const scans = await executeQuery(query, params);
+
     res.json({ success: true, scans });
-  });
+
+  } catch (error) {
+    console.error('خطأ في جلب المسحات:', error);
+    res.status(500).json({ success: false, message: 'خطأ في الخادم' });
+  }
 });
 
 // تحديث حالة التليجرام للمسحة
@@ -650,12 +647,9 @@ app.post('/api/settings', authenticateOwner, (req, res) => {
 });
 
 // جلب الإعدادات (للأونر فقط)
-app.get('/api/settings', authenticateOwner, (req, res) => {
-  db.all("SELECT key, value FROM settings", (err, settings) => {
-    if (err) {
-      console.error('خطأ في جلب الإعدادات:', err);
-      return res.status(500).json({ success: false, message: 'خطأ في الخادم' });
-    }
+app.get('/api/settings', authenticateOwner, async (req, res) => {
+  try {
+    const settings = await executeQuery("SELECT key, value FROM settings");
 
     const settingsObj = {};
     settings.forEach(setting => {
@@ -663,7 +657,11 @@ app.get('/api/settings', authenticateOwner, (req, res) => {
     });
 
     res.json({ success: true, settings: settingsObj });
-  });
+
+  } catch (error) {
+    console.error('خطأ في جلب الإعدادات:', error);
+    res.status(500).json({ success: false, message: 'خطأ في الخادم' });
+  }
 });
 
 // اختبار اتصال التليجرام
@@ -729,28 +727,27 @@ app.get('/api/health', (req, res) => {
 // ==================== Middleware ====================
 
 // التحقق من صحة الجلسة (للمستخدمين العاديين)
-function authenticateUser(req, res, next) {
-  const sessionId = req.headers.authorization?.replace('Bearer ', '');
+async function authenticateUser(req, res, next) {
+  try {
+    const sessionId = req.headers.authorization?.replace('Bearer ', '');
 
-  if (!sessionId) {
-    return res.status(401).json({ success: false, message: 'مطلوب تسجيل الدخول' });
-  }
-
-  db.get(`SELECT s.*, u.id as userId FROM user_sessions s 
-          JOIN users u ON s.user_id = u.id 
-          WHERE s.id = ? AND s.expires_at > CURRENT_TIMESTAMP AND u.is_active = 1`, 
-         [sessionId], (err, session) => {
-    if (err) {
-      console.error('خطأ في التحقق من الجلسة:', err);
-      return res.status(500).json({ success: false, message: 'خطأ في الخادم' });
+    if (!sessionId) {
+      return res.status(401).json({ success: false, message: 'مطلوب تسجيل الدخول' });
     }
+
+    const session = await executeGet(
+      `SELECT s.*, u.id as userId FROM user_sessions s 
+       JOIN users u ON s.user_id = u.id 
+       WHERE s.id = ? AND s.expires_at > CURRENT_TIMESTAMP AND u.is_active = 1`, 
+      [sessionId]
+    );
 
     if (!session) {
       return res.status(401).json({ success: false, message: 'الجلسة منتهية الصلاحية' });
     }
 
     // تحديث آخر نشاط
-    db.run("UPDATE user_sessions SET last_activity = CURRENT_TIMESTAMP WHERE id = ?", [sessionId]);
+    await executeRun("UPDATE user_sessions SET last_activity = CURRENT_TIMESTAMP WHERE id = ?", [sessionId]);
 
     req.user = {
       userId: session.userId,
@@ -760,17 +757,26 @@ function authenticateUser(req, res, next) {
     };
 
     next();
-  });
+    
+  } catch (error) {
+    console.error('خطأ في التحقق من الجلسة:', error);
+    res.status(500).json({ success: false, message: 'خطأ في الخادم' });
+  }
 }
 
 // التحقق من صلاحيات الأونر
-function authenticateOwner(req, res, next) {
-  authenticateUser(req, res, () => {
-    if (!req.user.isOwner) {
-      return res.status(403).json({ success: false, message: 'هذه الميزة متاحة للأونر فقط' });
-    }
-    next();
-  });
+async function authenticateOwner(req, res, next) {
+  try {
+    await authenticateUser(req, res, () => {
+      if (!req.user.isOwner) {
+        return res.status(403).json({ success: false, message: 'هذه الميزة متاحة للأونر فقط' });
+      }
+      next();
+    });
+  } catch (error) {
+    console.error('خطأ في التحقق من صلاحيات الأونر:', error);
+    res.status(500).json({ success: false, message: 'خطأ في الخادم' });
+  }
 }
 
 // دالة الإرسال إلى التليجرام

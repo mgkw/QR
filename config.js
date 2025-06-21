@@ -8,7 +8,7 @@ const config = {
   database: {
     // Turso Database Configuration
     url: process.env.TURSO_DATABASE_URL || 'https://takyd-tlbat-mgkw.turso.io',
-    authToken: process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJnaWQiOiIzNmU0NjAwNy02MmM5LTQzMDUtOGZhNC0xN2Q2NTkyZWY5MGQiLCJpYXQiOjE3NTA1MjI5NTcsInJpZCI6ImEzMTMwODFjLWU5ZjAtNDc5OS04Mjc4LTJmNWU3NWY2MWQ1ZiJ9.z_1WZUTgkkaVmVjvWQs_OkZ-91utWX1l_W2JO8mjkEtZ-YsMiY41VrR22gRWU9Y2EOM3nPVDW9OBv2HlOPqCDw',
+    authToken: process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJnaWQiOiIzNmU0NjAwNy02MmM5LTQzMDUtOGZhNC0xN2Q2NTkyZWY5MGQiLCJpYXQiOjE3NTA1MjQxOTUsInJpZCI6ImEzMTMwODFjLWU5ZjAtNDc5OS04Mjc4LTJmNWU3NWY2MWQ1ZiJ9.gPabjruKETqFyl8pcsHAH1pMtJwHr3SSaiO6fJtBKpDhZ43k1layjZGbxku718NonC9W-TJtVCMpLY-XM0STBQ',
     // Fallback to local SQLite if Turso is unavailable
     localPath: process.env.DB_PATH || './database/qr_scanner.db'
   },
