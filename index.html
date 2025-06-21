@@ -134,7 +134,7 @@
     <div class="device-info" id="deviceInfo">
         <i class="fas fa-mobile-alt"></i> <span id="deviceType">Unknown</span> | 
         <i class="fas fa-wifi"></i> <span id="connectionType">Online</span>
-    </div>
+                </div>
 
     <div class="container">
         <!-- رسالة الترحيب -->
@@ -145,25 +145,25 @@
                 <i class="fas fa-sync sync-indicator" id="syncIndicator" style="display: none;"></i>
             </h2>
             <p>يمكنك الآن الوصول لبياناتك من أي مكان في العالم 🌍</p>
-        </div>
-
+                        </div>
+                        
         <!-- المميزات العالمية -->
         <div class="global-features">
             <div class="feature-card">
                 <i class="fas fa-cloud"></i>
                 <h4>تزامن سحابي</h4>
                 <p>بياناتك محفوظة ومتزامنة عالمياً</p>
-            </div>
+                        </div>
             <div class="feature-card">
                 <i class="fas fa-mobile-alt"></i>
                 <h4>متوافق مع الجوال</h4>
                 <p>يعمل على جميع الأجهزة والمنصات</p>
-            </div>
+                    </div>
             <div class="feature-card">
                 <i class="fas fa-shield-alt"></i>
                 <h4>حماية متقدمة</h4>
                 <p>نظام مصادقة آمن ومشفر</p>
-            </div>
+                </div>
             <div class="feature-card">
                 <i class="fas fa-bolt"></i>
                 <h4>سرعة فائقة</h4>
@@ -177,7 +177,7 @@
                 <h2><i class="fas fa-sign-in-alt"></i> تسجيل الدخول</h2>
                 <p>ادخل إلى النظام العالمي لقراءة الباركود</p>
             </div>
-            
+
             <form id="loginForm" class="card-body" autocomplete="on">
                 <div class="form-group">
                     <label for="username">
@@ -202,16 +202,16 @@
                            placeholder="ادخل كلمة المرور (اختياري)"
                            autocomplete="current-password"
                            class="form-control">
-                </div>
-                
+                    </div>
+
                 <div class="form-group">
                     <label class="checkbox-container">
                         <input type="checkbox" id="rememberMe" name="rememberMe">
                         <span class="checkmark"></span>
                         تذكرني لمدة 30 يوماً
                     </label>
-                </div>
-                
+                    </div>
+
                 <button type="submit" class="btn btn-primary btn-block">
                     <i class="fas fa-sign-in-alt"></i> دخول
                 </button>
@@ -222,13 +222,13 @@
                 <div class="demo-accounts">
                     <button class="btn btn-outline" onclick="quickLogin('admin', 'owner123')">
                         <i class="fas fa-crown"></i> admin (مدير)
-                    </button>
+                                </button>
                     <button class="btn btn-outline" onclick="quickLogin('test', '')">
                         <i class="fas fa-user"></i> test (عادي)
-                    </button>
+                                </button>
                 </div>
             </div>
-        </div>
+                    </div>
 
         <!-- واجهة الماسح الضوئي -->
         <div id="scannerSection" class="card" style="display: none;">
@@ -280,9 +280,9 @@
                     </button>
                     <button id="stopCameraBtn" class="btn btn-danger btn-block" style="display: none;">
                         <i class="fas fa-stop"></i> إيقاف الكاميرا
-                    </button>
-                </div>
-
+                            </button>
+                        </div>
+                        
                 <!-- منطقة المعاينة -->
                 <div id="previewContainer" class="preview-container" style="display: none;">
                     <video id="preview" class="video-preview" autoplay muted playsinline></video>
@@ -302,7 +302,7 @@
                     <button id="uploadBtn" class="btn btn-outline btn-block">
                         <i class="fas fa-upload"></i> رفع صورة
                     </button>
-                </div>
+            </div>
 
                 <!-- نتائج المسح -->
                 <div id="scanResults" class="scan-results" style="display: none;">
@@ -310,7 +310,7 @@
                     <div class="result-content">
                         <div class="result-image">
                             <img id="resultImage" alt="صورة الباركود">
-                        </div>
+                    </div>
                         <div class="result-details">
                             <div class="barcode-info">
                                 <label>الباركود:</label>
@@ -330,7 +330,7 @@
                     </div>
                 </div>
             </div>
-        </div>
+                    </div>
 
         <!-- إدارة المسحات -->
         <div id="scansSection" class="card" style="display: none;">
@@ -342,40 +342,40 @@
                     </button>
                     <button id="refreshScansBtn" class="btn btn-outline">
                         <i class="fas fa-sync-alt"></i> تحديث
-                    </button>
+                        </button>
                 </div>
             </div>
-            
+
             <div class="card-body">
                 <!-- فلاتر البحث -->
                 <div class="filters-section">
                     <div class="filter-group">
                         <input type="text" id="searchFilter" placeholder="بحث في الباركود..." class="form-control">
                     </div>
-                    <div class="filter-group">
+                                <div class="filter-group">
                         <select id="userFilter" class="form-control">
-                            <option value="">جميع المستخدمين</option>
-                        </select>
-                    </div>
+                                        <option value="">جميع المستخدمين</option>
+                                    </select>
+                                </div>
                     <div class="filter-group">
                         <input type="date" id="dateFilter" class="form-control">
-                    </div>
-                </div>
+                            </div>
+                        </div>
 
                 <!-- قائمة المسحات -->
                 <div id="scansList" class="scans-list">
                     <div class="loading-message">
                         <i class="fas fa-spinner fa-spin"></i> جاري تحميل المسحات من الخادم العالمي...
-                    </div>
-                </div>
-            </div>
-        </div>
+                                </div>
+                                </div>
+                            </div>
+                        </div>
 
         <!-- الإعدادات -->
         <div id="settingsSection" class="card" style="display: none;">
             <div class="card-header">
                 <h3><i class="fas fa-cog"></i> الإعدادات</h3>
-            </div>
+                                </div>
             
             <div class="card-body">
                 <!-- إعدادات النظام -->
