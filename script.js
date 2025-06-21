@@ -17,6 +17,7 @@ const userInfo = document.getElementById('userInfo');
 const userName = document.getElementById('userName');
 const usernameInput = document.getElementById('usernameInput');
 const passwordInput = document.getElementById('passwordInput');
+const rememberMeCheckbox = document.getElementById('rememberMe');
 const loginBtn = document.getElementById('loginBtn');
 const ownerLoginBtn = document.getElementById('ownerLoginBtn');
 const showOwnerLogin = document.getElementById('showOwnerLogin');
@@ -128,6 +129,13 @@ newUsername.addEventListener('keypress', (e) => {
     }
 });
 
+// Remember me checkbox change event
+rememberMeCheckbox.addEventListener('change', function() {
+    if (this.checked) {
+        showAlert('سيتم حفظ تسجيل الدخول لمدة 30 يوماً', 'info');
+    }
+});
+
 // Initialize App
 function initApp() {
     loadUserSession();
@@ -159,7 +167,8 @@ function handleLogin() {
     };
     
     isOwner = false;
-    saveUserSession();
+    const rememberUser = rememberMeCheckbox.checked;
+    saveUserSession(rememberUser);
     updateUI();
     showAlert(`مرحباً ${username}!`, 'success');
 }
@@ -186,7 +195,8 @@ function handleOwnerLogin() {
     };
     
     isOwner = true;
-    saveUserSession();
+    const rememberUser = rememberMeCheckbox.checked;
+    saveUserSession(rememberUser);
     updateUI();
     showAlert(`مرحباً ${username} (الأونر)!`, 'success');
 }
@@ -225,6 +235,7 @@ function handleLogout() {
 function resetLoginForm() {
     usernameInput.value = '';
     passwordInput.value = '';
+    rememberMeCheckbox.checked = false;
     passwordInput.style.display = 'none';
     ownerLoginBtn.style.display = 'none';
     loginBtn.style.display = 'inline-flex';
@@ -232,20 +243,83 @@ function resetLoginForm() {
     usernameInput.placeholder = 'اسم المستخدم';
 }
 
-function saveUserSession() {
-    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+function saveUserSession(rememberUser = false) {
+    const sessionData = {
+        user: currentUser,
+        timestamp: Date.now(),
+        rememberMe: rememberUser
+    };
+    
+    if (rememberUser) {
+        // Save for 30 days if "Remember me" is checked
+        const expirationTime = Date.now() + (30 * 24 * 60 * 60 * 1000); // 30 days
+        sessionData.expiration = expirationTime;
+        localStorage.setItem('currentUser', JSON.stringify(sessionData));
+        
+        // Also save username for quick access
+        localStorage.setItem('savedUsername', currentUser.username);
+        localStorage.setItem('userType', currentUser.isOwner ? 'owner' : 'user');
+    } else {
+        // Save for current session only (24 hours)
+        const expirationTime = Date.now() + (24 * 60 * 60 * 1000); // 24 hours
+        sessionData.expiration = expirationTime;
+        localStorage.setItem('currentUser', JSON.stringify(sessionData));
+    }
 }
 
 function loadUserSession() {
-    const savedUser = localStorage.getItem('currentUser');
-    if (savedUser) {
-        currentUser = JSON.parse(savedUser);
-        isOwner = currentUser.isOwner || false;
+    const saved = localStorage.getItem('currentUser');
+    if (saved) {
+        try {
+            const sessionData = JSON.parse(saved);
+            
+            // Check if session has expired
+            if (sessionData.expiration && Date.now() > sessionData.expiration) {
+                clearUserSession();
+                showAlert('انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى.', 'info');
+                return;
+            }
+            
+            currentUser = sessionData.user;
+            isOwner = currentUser.isOwner || false;
+            
+            // Pre-fill username if it was saved
+            const savedUsername = localStorage.getItem('savedUsername');
+            const userType = localStorage.getItem('userType');
+            
+            if (savedUsername) {
+                usernameInput.value = savedUsername;
+                
+                // Show appropriate login form based on saved user type
+                if (userType === 'owner') {
+                    toggleOwnerLogin();
+                }
+                
+                // Check "Remember me" if this was a remembered session
+                if (sessionData.rememberMe) {
+                    rememberMeCheckbox.checked = true;
+                }
+            }
+            
+        } catch (error) {
+            console.error('Error loading user session:', error);
+            clearUserSession();
+        }
     }
 }
 
 function clearUserSession() {
     localStorage.removeItem('currentUser');
+    localStorage.removeItem('savedUsername');
+    localStorage.removeItem('userType');
+    currentUser = null;
+    isOwner = false;
+    
+    // Clear login form
+    usernameInput.value = '';
+    passwordInput.value = '';
+    rememberMeCheckbox.checked = false;
+    resetLoginForm();
 }
 
 // Registered Users Management

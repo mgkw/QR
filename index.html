@@ -20,17 +20,30 @@
                     </button>
                 </div>
                 <div id="loginSection" class="login-section">
-                    <input type="text" id="usernameInput" placeholder="اسم المستخدم" class="input-field">
-                    <input type="password" id="passwordInput" placeholder="كلمة المرور (للأونر فقط)" class="input-field" style="display: none;">
-                    <button id="loginBtn" class="btn btn-primary">
-                        <i class="fas fa-sign-in-alt"></i> دخول
-                    </button>
-                    <button id="ownerLoginBtn" class="btn btn-warning" style="display: none;">
-                        <i class="fas fa-crown"></i> دخول كأونر
-                    </button>
-                    <button id="showOwnerLogin" class="btn btn-secondary">
-                        <i class="fas fa-user-cog"></i> أونر
-                    </button>
+                    <div class="login-form">
+                        <input type="text" id="usernameInput" placeholder="اسم المستخدم" class="input-field">
+                        <input type="password" id="passwordInput" placeholder="كلمة المرور (للأونر فقط)" class="input-field" style="display: none;">
+                        
+                        <div class="remember-me-section">
+                            <label class="remember-checkbox">
+                                <input type="checkbox" id="rememberMe">
+                                <span class="checkmark"></span>
+                                <span class="remember-text">تذكرني لمدة 30 يوماً</span>
+                            </label>
+                        </div>
+                        
+                        <div class="login-buttons">
+                            <button id="loginBtn" class="btn btn-primary">
+                                <i class="fas fa-sign-in-alt"></i> دخول
+                            </button>
+                            <button id="ownerLoginBtn" class="btn btn-warning" style="display: none;">
+                                <i class="fas fa-crown"></i> دخول كأونر
+                            </button>
+                            <button id="showOwnerLogin" class="btn btn-secondary owner-toggle-btn">
+                                <i class="fas fa-user-cog"></i> أونر
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
