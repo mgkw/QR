@@ -5,18 +5,16 @@ services:
     runtime: node
     plan: free
     region: oregon
-    buildCommand: npm install
+    buildCommand: npm install --production=false
     startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 10000
     healthCheckPath: /api/health
     numInstances: 1
     
 # Build settings
-buildCommand: npm install
+buildCommand: npm install --production=false
 startCommand: npm start
 
 # Auto-deploy settings

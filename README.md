@@ -232,7 +232,7 @@ git push origin main
 # 2. اذهب إلى render.com
 # 3. اربط مستودع GitHub
 # 4. استخدم الإعدادات:
-#    Build Command: npm install
+#    Build Command: npm install --production=false
 #    Start Command: npm start
 ```
 📖 **دليل مفصل**: [RENDER_DEPLOY.md](RENDER_DEPLOY.md)

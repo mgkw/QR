@@ -29,7 +29,7 @@
 | **Runtime** | `Node` |
 | **Region** | `Oregon (US West)` |
 | **Branch** | `main` |
-| **Build Command** | `npm install` |
+| **Build Command** | `npm install --production=false` |
 | **Start Command** | `npm start` |
 
 ### 4. متغيرات البيئة (اختياري)
@@ -62,7 +62,7 @@ services:
     name: qr-scanner-nodejs
     runtime: node
     plan: free
-    buildCommand: npm install
+    buildCommand: npm install --production=false
     startCommand: npm start
     healthCheckPath: /api/health
 ```
@@ -79,6 +79,11 @@ services:
 1. تحقق من **Build Logs** في Render
 2. تأكد من صحة `package.json`
 3. تحقق من متطلبات Node.js: `>=18.0.0`
+
+**مشاكل شائعة**:
+- `Couldn't find any versions for "package"`: مكتبة غير موجودة
+- `yarn install` فشل: استخدم `npm install` في Build Command
+- `sqlite3` تحذيرات: طبيعي ولا يؤثر على العمل
 
 ### المشكلة: التطبيق لا يستجيب
 **الحل**:
