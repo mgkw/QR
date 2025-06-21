@@ -717,12 +717,10 @@ function deleteUser(username) {
         return;
     }
     
-    if (confirm(`هل أنت متأكد من حذف المستخدم "${username}"؟`)) {
-        registeredUsers = registeredUsers.filter(user => user.username !== username);
-        saveRegisteredUsers();
-        loadUsersToModal();
-        showAlert(`تم حذف المستخدم "${username}" بنجاح`, 'success');
-    }
+    registeredUsers = registeredUsers.filter(user => user.username !== username);
+    saveRegisteredUsers();
+    loadUsersToModal();
+    showAlert(`تم حذف المستخدم "${username}" بنجاح`, 'success');
 }
 
 function handleExportUsers() {
@@ -1752,11 +1750,9 @@ async function initializeDualScanning() {
             console.error('Neither Quagga nor jsQR libraries are loaded');
             showAlert('❌ خطأ: لم يتم تحميل مكتبات المسح. يرجى التحقق من الاتصال بالإنترنت والمحاولة مرة أخرى.', 'error');
             
-            // محاولة إعادة تحميل الصفحة بعد 3 ثوانِ
+            // إعادة تحميل الصفحة تلقائياً بعد 3 ثوانِ
             setTimeout(() => {
-                if (confirm('هل تريد إعادة تحميل الصفحة لحل مشكلة تحميل المكتبات؟')) {
-                    location.reload();
-                }
+                location.reload();
             }, 3000);
             
             reject(new Error('Libraries not loaded'));
