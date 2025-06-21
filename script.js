@@ -161,20 +161,37 @@ function checkLibrariesStatus() {
     const quaggaLoaded = typeof Quagga !== 'undefined';
     const jsQRLoaded = typeof jsQR !== 'undefined';
     
-    console.log('=== Library Status Check ===');
+    console.log('=== 📚 Library Status Check ===');
     console.log('Quagga (Traditional Barcodes):', quaggaLoaded ? '✅ Loaded' : '❌ Not Loaded');
     console.log('jsQR (QR Codes):', jsQRLoaded ? '✅ Loaded' : '❌ Not Loaded');
     
     if (!quaggaLoaded && !jsQRLoaded) {
         console.error('❌ CRITICAL: No scanning libraries loaded!');
-        showAlert('خطأ حرج: لم يتم تحميل مكتبات المسح. يرجى إعادة تحميل الصفحة.', 'error');
+        showAlert('⚠️ لم يتم تحميل مكتبات المسح. يرجى التحقق من الاتصال بالإنترنت وإعادة تحميل الصفحة.', 'warning');
+        
+        // محاولة إعادة تحميل المكتبات
+        setTimeout(() => {
+            console.log('🔄 Attempting to reload libraries...');
+            location.reload();
+        }, 3000);
+        
     } else if (!quaggaLoaded) {
         console.warn('⚠️ WARNING: Quagga not loaded - only QR codes will work');
+        showAlert('⚠️ سيعمل قارئ الـ QR فقط. لم يتم تحميل قارئ الباركود التقليدي.', 'info');
     } else if (!jsQRLoaded) {
         console.warn('⚠️ WARNING: jsQR not loaded - only traditional barcodes will work');
+        showAlert('⚠️ سيعمل قارئ الباركود التقليدي فقط. لم يتم تحميل قارئ الـ QR.', 'info');
     } else {
         console.log('✅ All libraries loaded successfully');
+        showAlert('✅ تم تحميل جميع مكتبات المسح بنجاح!', 'success');
     }
+    
+    // تحديث متغيرات حالة المكتبات
+    window.scannerLibraries = {
+        jsQR: jsQRLoaded,
+        quagga: quaggaLoaded,
+        anyLoaded: jsQRLoaded || quaggaLoaded
+    };
     
     console.log('===============================');
 }
@@ -1486,7 +1503,15 @@ async function initializeDualScanning() {
         
         if (!quaggaLoaded && !jsQRLoaded) {
             console.error('Neither Quagga nor jsQR libraries are loaded');
-            showAlert('خطأ: لم يتم تحميل مكتبات المسح بشكل صحيح', 'error');
+            showAlert('❌ خطأ: لم يتم تحميل مكتبات المسح. يرجى التحقق من الاتصال بالإنترنت والمحاولة مرة أخرى.', 'error');
+            
+            // محاولة إعادة تحميل الصفحة بعد 3 ثوانِ
+            setTimeout(() => {
+                if (confirm('هل تريد إعادة تحميل الصفحة لحل مشكلة تحميل المكتبات؟')) {
+                    location.reload();
+                }
+            }, 3000);
+            
             reject(new Error('Libraries not loaded'));
             return;
         }
