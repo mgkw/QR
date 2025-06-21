@@ -537,7 +537,7 @@ def index():
     
     # الحصول على نوع قاعدة البيانات بشكل آمن
     database_type = db_connection_status.get('database_type')
-    if database_type is None:
+    if database_type is None or database_type == '':
         database_type = 'SQLITE'  # القيمة الافتراضية
     else:
         database_type = str(database_type).upper()
