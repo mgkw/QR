@@ -3,6 +3,7 @@ const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 
 const app = express();
@@ -849,18 +850,316 @@ app.put('/api/scan/:id/telegram', async (req, res) => {
     }
 });
 
+// ============ APIs للجلسات والإعدادات (بدلاً من localStorage) ============
+
+// إنشاء جلسة جديدة
+app.post('/api/session', async (req, res) => {
+    const { user_id, username, session_data, expires_in = 86400 } = req.body; // 24 hours default
+    
+    try {
+        const sessionId = crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + (expires_in * 1000)).toISOString();
+        
+        await runQuery(`
+            INSERT INTO user_sessions (id, user_id, username, session_data, expires_at, ip_address, user_agent)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [
+            sessionId,
+            user_id,
+            username,
+            JSON.stringify(session_data || {}),
+            expiresAt,
+            req.ip || req.connection.remoteAddress,
+            req.get('User-Agent')
+        ]);
+        
+        res.json({
+            success: true,
+            session_id: sessionId,
+            expires_at: expiresAt
+        });
+        
+    } catch (error) {
+        console.error('خطأ في إنشاء الجلسة:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'خطأ في إنشاء الجلسة' 
+        });
+    }
+});
+
+// الحصول على بيانات الجلسة
+app.get('/api/session/:sessionId', async (req, res) => {
+    const { sessionId } = req.params;
+    
+    try {
+        const session = await getQuery(`
+            SELECT * FROM user_sessions 
+            WHERE id = ? AND expires_at > datetime('now') AND is_active = 1
+        `, [sessionId]);
+        
+        if (!session) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'الجلسة غير موجودة أو منتهية الصلاحية' 
+            });
+        }
+        
+        // تحديث وقت الوصول
+        await runQuery(`
+            UPDATE user_sessions 
+            SET last_accessed = datetime('now') 
+            WHERE id = ?
+        `, [sessionId]);
+        
+        res.json({
+            success: true,
+            session: {
+                id: session.id,
+                user_id: session.user_id,
+                username: session.username,
+                session_data: JSON.parse(session.session_data || '{}'),
+                expires_at: session.expires_at,
+                last_accessed: session.last_accessed
+            }
+        });
+        
+    } catch (error) {
+        console.error('خطأ في جلب الجلسة:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'خطأ في جلب الجلسة' 
+        });
+    }
+});
+
+// تحديث بيانات الجلسة
+app.put('/api/session/:sessionId', async (req, res) => {
+    const { sessionId } = req.params;
+    const { session_data } = req.body;
+    
+    try {
+        const result = await runQuery(`
+            UPDATE user_sessions 
+            SET session_data = ?, last_accessed = datetime('now')
+            WHERE id = ? AND expires_at > datetime('now') AND is_active = 1
+        `, [JSON.stringify(session_data), sessionId]);
+        
+        if (result.changes === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'الجلسة غير موجودة أو منتهية الصلاحية' 
+            });
+        }
+        
+        res.json({
+            success: true,
+            message: 'تم تحديث الجلسة بنجاح'
+        });
+        
+    } catch (error) {
+        console.error('خطأ في تحديث الجلسة:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'خطأ في تحديث الجلسة' 
+        });
+    }
+});
+
+// إنهاء الجلسة (logout)
+app.delete('/api/session/:sessionId', async (req, res) => {
+    const { sessionId } = req.params;
+    
+    try {
+        await runQuery(`
+            UPDATE user_sessions 
+            SET is_active = 0 
+            WHERE id = ?
+        `, [sessionId]);
+        
+        res.json({
+            success: true,
+            message: 'تم إنهاء الجلسة بنجاح'
+        });
+        
+    } catch (error) {
+        console.error('خطأ في إنهاء الجلسة:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'خطأ في إنهاء الجلسة' 
+        });
+    }
+});
+
+// حفظ إعداد مستخدم
+app.post('/api/settings', async (req, res) => {
+    const { user_id, setting_key, setting_value, setting_type = 'string' } = req.body;
+    
+    if (!user_id || !setting_key) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'user_id و setting_key مطلوبان' 
+        });
+    }
+    
+    try {
+        await runQuery(`
+            INSERT OR REPLACE INTO user_settings (user_id, setting_key, setting_value, setting_type, updated_at)
+            VALUES (?, ?, ?, ?, datetime('now'))
+        `, [user_id, setting_key, setting_value, setting_type]);
+        
+        res.json({
+            success: true,
+            message: 'تم حفظ الإعداد بنجاح'
+        });
+        
+    } catch (error) {
+        console.error('خطأ في حفظ الإعداد:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'خطأ في حفظ الإعداد' 
+        });
+    }
+});
+
+// الحصول على إعداد مستخدم
+app.get('/api/settings/:userId/:settingKey', async (req, res) => {
+    const { userId, settingKey } = req.params;
+    
+    try {
+        const setting = await getQuery(`
+            SELECT * FROM user_settings 
+            WHERE user_id = ? AND setting_key = ?
+        `, [userId, settingKey]);
+        
+        if (!setting) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'الإعداد غير موجود' 
+            });
+        }
+        
+        res.json({
+            success: true,
+            setting: {
+                key: setting.setting_key,
+                value: setting.setting_value,
+                type: setting.setting_type,
+                updated_at: setting.updated_at
+            }
+        });
+        
+    } catch (error) {
+        console.error('خطأ في جلب الإعداد:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'خطأ في جلب الإعداد' 
+        });
+    }
+});
+
+// الحصول على جميع إعدادات المستخدم
+app.get('/api/settings/:userId', async (req, res) => {
+    const { userId } = req.params;
+    
+    try {
+        const settings = await getAllQuery(`
+            SELECT setting_key, setting_value, setting_type, updated_at
+            FROM user_settings 
+            WHERE user_id = ?
+            ORDER BY setting_key
+        `, [userId]);
+        
+        const settingsObject = {};
+        settings.forEach(setting => {
+            settingsObject[setting.setting_key] = {
+                value: setting.setting_value,
+                type: setting.setting_type,
+                updated_at: setting.updated_at
+            };
+        });
+        
+        res.json({
+            success: true,
+            settings: settingsObject
+        });
+        
+    } catch (error) {
+        console.error('خطأ في جلب الإعدادات:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'خطأ في جلب الإعدادات' 
+        });
+    }
+});
+
+// حذف إعداد مستخدم
+app.delete('/api/settings/:userId/:settingKey', async (req, res) => {
+    const { userId, settingKey } = req.params;
+    
+    try {
+        const result = await runQuery(`
+            DELETE FROM user_settings 
+            WHERE user_id = ? AND setting_key = ?
+        `, [userId, settingKey]);
+        
+        if (result.changes === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'الإعداد غير موجود' 
+            });
+        }
+        
+        res.json({
+            success: true,
+            message: 'تم حذف الإعداد بنجاح'
+        });
+        
+    } catch (error) {
+        console.error('خطأ في حذف الإعداد:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'خطأ في حذف الإعداد' 
+        });
+    }
+});
+
+// تنظيف الجلسات منتهية الصلاحية
+app.post('/api/cleanup-sessions', async (req, res) => {
+    try {
+        const result = await runQuery(`
+            DELETE FROM user_sessions 
+            WHERE expires_at < datetime('now') OR is_active = 0
+        `);
+        
+        res.json({
+            success: true,
+            message: `تم حذف ${result.changes} جلسة منتهية الصلاحية`
+        });
+        
+    } catch (error) {
+        console.error('خطأ في تنظيف الجلسات:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'خطأ في تنظيف الجلسات' 
+        });
+    }
+});
+
 // فحص صحة النظام المحسن
 app.get('/api/health', async (req, res) => {
     try {
         // اختبار قاعدة البيانات
         const dbTest = await getQuery('SELECT COUNT(*) as count FROM users');
+        const sessionCount = await getQuery('SELECT COUNT(*) as count FROM user_sessions WHERE is_active = 1');
         
         res.json({
             success: true,
             status: 'healthy',
-            database: 'SQLite Enhanced',
+            database: 'SQLite Enhanced with Sessions',
             server: 'Node.js + Express',
             users: dbTest.count,
+            active_sessions: sessionCount.count,
             uptime: process.uptime(),
             memory: process.memoryUsage(),
             timestamp: new Date().toISOString()

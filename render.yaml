@@ -6,9 +6,7 @@ services:
     runtime: node
     plan: free
     region: oregon
-    buildCommand: |
-      npm install --production=false &&
-      npm run migrate
+    buildCommand: npm install --production=false && npm run migrate
     startCommand: npm run start:enhanced
     envVars:
       - key: NODE_ENV

@@ -11,6 +11,7 @@ let registeredUsers = [];
 let recentScans = []; // For 20-second duplicate detection
 let highlightOverlay = null; // For barcode highlighting
 let isProcessingCode = false; // Prevent simultaneous code processing
+let pauseTimeout = null; // For managing pause timeout
 
 // Owner Settings
 const OWNER_PASSWORD = "owner123"; // يمكن تغييرها لاحقاً
@@ -80,7 +81,9 @@ const exportFilteredReport = document.getElementById('exportFilteredReport');
 const loadingOverlay = document.getElementById('loadingOverlay');
 
 // Event Listeners
-document.addEventListener('DOMContentLoaded', initApp);
+document.addEventListener('DOMContentLoaded', () => {
+    initApp();
+});
 loginBtn.addEventListener('click', handleLogin);
 ownerLoginBtn.addEventListener('click', handleOwnerLogin);
 showOwnerLogin.addEventListener('click', toggleOwnerLogin);
@@ -141,17 +144,17 @@ rememberMeCheckbox.addEventListener('change', function() {
 });
 
 // Initialize App
-function initApp() {
+async function initApp() {
     console.log('Initializing Barcode Scanner App...');
     
     // Check if all required libraries are loaded
     checkLibrariesStatus();
     
-    loadUserSession();
-    loadRegisteredUsers();
+    await loadUserSession();
+    await loadRegisteredUsers();
     loadSettings();
     updateUI();
-    loadResults();
+    await loadResults();
     
     console.log('App initialization complete');
 }
@@ -277,75 +280,74 @@ function resetLoginForm() {
     usernameInput.placeholder = 'اسم المستخدم';
 }
 
-function saveUserSession(rememberUser = false) {
-    const sessionData = {
-        user: currentUser,
-        timestamp: Date.now(),
-        rememberMe: rememberUser
-    };
+async function saveUserSession(rememberUser = false) {
+    if (!currentUser) return;
     
-    if (rememberUser) {
-        // Save for 30 days if "Remember me" is checked
-        const expirationTime = Date.now() + (30 * 24 * 60 * 60 * 1000); // 30 days
-        sessionData.expiration = expirationTime;
-        localStorage.setItem('currentUser', JSON.stringify(sessionData));
+    const expiresIn = rememberUser ? (30 * 24 * 60 * 60) : (24 * 60 * 60); // 30 days or 24 hours
+    
+    try {
+        await createSession(currentUser, expiresIn);
         
-        // Also save username for quick access
-        localStorage.setItem('savedUsername', currentUser.username);
-        localStorage.setItem('userType', currentUser.isOwner ? 'owner' : 'user');
-    } else {
-        // Save for current session only (24 hours)
-        const expirationTime = Date.now() + (24 * 60 * 60 * 1000); // 24 hours
-        sessionData.expiration = expirationTime;
-        localStorage.setItem('currentUser', JSON.stringify(sessionData));
+        // Save user preferences
+        await saveSetting('remember_me', rememberUser.toString(), 'boolean');
+        await saveSetting('login_time', new Date().toISOString(), 'datetime');
+        
+        if (rememberUser) {
+            await saveSetting('saved_username', currentUser.username, 'string');
+            await saveSetting('user_type', currentUser.isOwner ? 'owner' : 'user', 'string');
+        }
+    } catch (error) {
+        console.error('Error saving user session:', error);
     }
 }
 
-function loadUserSession() {
-    const saved = localStorage.getItem('currentUser');
-    if (saved) {
-        try {
-            const sessionData = JSON.parse(saved);
-            
-            // Check if session has expired
-            if (sessionData.expiration && Date.now() > sessionData.expiration) {
-                clearUserSession();
-                showAlert('انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى.', 'info');
-                return;
-            }
-            
-            currentUser = sessionData.user;
+async function loadUserSession() {
+    const sessionId = getCookie('session_id');
+    if (!sessionId) return;
+    
+    try {
+        const sessionData = await loadSession(sessionId);
+        if (sessionData && sessionData.success) {
+            currentUser = sessionData.session.user;
             isOwner = currentUser.isOwner || false;
             
-            // Pre-fill username if it was saved
-            const savedUsername = localStorage.getItem('savedUsername');
-            const userType = localStorage.getItem('userType');
+            // Load user settings
+            const settings = await loadAllSettings();
+            
+            // Pre-fill form based on saved settings
+            const savedUsername = settings.saved_username;
+            const userType = settings.user_type;
+            const rememberMe = settings.remember_me === 'true';
             
             if (savedUsername) {
                 usernameInput.value = savedUsername;
                 
-                // Show appropriate login form based on saved user type
+                // Show appropriate login form
                 if (userType === 'owner') {
                     toggleOwnerLogin();
                 }
                 
-                // Check "Remember me" if this was a remembered session
-                if (sessionData.rememberMe) {
+                if (rememberMe) {
                     rememberMeCheckbox.checked = true;
                 }
             }
-            
-        } catch (error) {
-            console.error('Error loading user session:', error);
+        } else {
+            // Session invalid or expired
             clearUserSession();
         }
+    } catch (error) {
+        console.error('Error loading user session:', error);
+        clearUserSession();
     }
 }
 
-function clearUserSession() {
-    localStorage.removeItem('currentUser');
-    localStorage.removeItem('savedUsername');
-    localStorage.removeItem('userType');
+async function clearUserSession() {
+    const sessionId = getCookie('session_id');
+    if (sessionId) {
+        await endSession(sessionId);
+    }
+    
+    deleteCookie('session_id');
     currentUser = null;
     isOwner = false;
     
@@ -357,19 +359,29 @@ function clearUserSession() {
 }
 
 // Registered Users Management
-function loadRegisteredUsers() {
-    const saved = localStorage.getItem('registeredUsers');
-    if (saved) {
-        registeredUsers = JSON.parse(saved);
-    } else {
-        // Initialize with empty array
+async function loadRegisteredUsers() {
+    try {
+        const response = await fetch('/api/users');
+        const data = await response.json();
+        
+        if (data.success) {
+            registeredUsers = data.users.map(user => ({
+                username: user.username,
+                createdAt: user.created_at,
+                createdBy: user.created_by
+            }));
+        } else {
+            registeredUsers = [];
+        }
+    } catch (error) {
+        console.error('Error loading registered users:', error);
         registeredUsers = [];
-        saveRegisteredUsers();
     }
 }
 
-function saveRegisteredUsers() {
-    localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
+async function saveRegisteredUsers() {
+    // This function is now handled by individual API calls
+    // for adding/removing users, so it's kept for compatibility
 }
 
 function openUsersModal() {
@@ -412,7 +424,7 @@ function loadUsersToModal() {
     });
 }
 
-function handleAddUser() {
+async function handleAddUser() {
     if (!isOwner) {
         showAlert('هذه الميزة متاحة للأونر فقط', 'error');
         return;
@@ -425,26 +437,33 @@ function handleAddUser() {
         return;
     }
     
-    // Check if user already exists
-    const userExists = registeredUsers.find(user => user.username === username);
-    if (userExists) {
-        showAlert('المستخدم موجود بالفعل', 'error');
-        return;
+    try {
+        const response = await fetch('/api/users', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                username: username,
+                full_name: username,
+                created_by: currentUser.username
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            await loadRegisteredUsers(); // Reload users list
+            loadUsersToModal();
+            newUsername.value = '';
+            showAlert(`تم إضافة المستخدم "${username}" بنجاح`, 'success');
+        } else {
+            showAlert(data.message || 'خطأ في إضافة المستخدم', 'error');
+        }
+    } catch (error) {
+        console.error('Error adding user:', error);
+        showAlert('خطأ في الاتصال بالخادم', 'error');
     }
-    
-    // Add new user
-    const newUser = {
-        username: username,
-        createdAt: new Date().toISOString(),
-        createdBy: currentUser.username
-    };
-    
-    registeredUsers.push(newUser);
-    saveRegisteredUsers();
-    loadUsersToModal();
-    newUsername.value = '';
-    
-    showAlert(`تم إضافة المستخدم "${username}" بنجاح`, 'success');
 }
 
 function deleteUser(username) {
@@ -1457,6 +1476,12 @@ async function startScanning() {
         await initializeDualScanning();
         
         isScanning = true;
+        
+        // Add active scanning visual feedback
+        if (cameraContainer) {
+            cameraContainer.classList.add('scanning-active');
+        }
+        
         updateScanButtons();
         showLoading(false);
         showAlert('تم بدء المسح المتطور (QR + باركود) ✓', 'success');
@@ -1711,7 +1736,9 @@ function scanForQRCode() {
 function stopScanning() {
     if (isScanning) {
         // Stop Quagga
-        Quagga.stop();
+        if (typeof Quagga !== 'undefined') {
+            Quagga.stop();
+        }
         isScanning = false;
         
         // QR scanning will automatically stop when isScanning becomes false
@@ -1725,6 +1752,14 @@ function stopScanning() {
     // Remove any highlights and clear recent scans
     removeHighlight();
     recentScans = [];
+    
+    // Remove all visual feedback classes
+    if (cameraContainer) {
+        cameraContainer.classList.remove('scanning-active', 'scanning-paused');
+    }
+    
+    // Remove pause indicator if any
+    removeScanPauseIndicator();
     
     cameraContainer.style.display = 'none';
     flashEnabled = false;
@@ -1787,20 +1822,20 @@ function updateFlashButton() {
     }
 }
 
-// Recent Scans Management (20-second duplicate detection)
+// Recent Scans Management (30-second duplicate detection)
 function findRecentDuplicate(code) {
     const now = Date.now();
-    // Clean old scans first (older than 20 seconds)
-    recentScans = recentScans.filter(scan => now - scan.timestamp < 20000);
+    // Clean old scans first (older than 30 seconds)
+    recentScans = recentScans.filter(scan => now - scan.timestamp < 30000);
     
-    // Find duplicate within last 20 seconds
+    // Find duplicate within last 30 seconds
     return recentScans.find(scan => scan.code === code);
 }
 
 function addToRecentScans(code) {
     const now = Date.now();
     // Clean old scans first
-    recentScans = recentScans.filter(scan => now - scan.timestamp < 20000);
+    recentScans = recentScans.filter(scan => now - scan.timestamp < 30000);
     
     // Add current scan
     recentScans.push({
@@ -1994,10 +2029,10 @@ async function handleCodeDetection(code, codeType = 'كود', location = null) {
         const existingScans = scannedResults.filter(result => result.code === code);
         const isFirstTime = existingScans.length === 0;
         
-        // Check for recent duplicate (within 20 seconds) to prevent rapid rescanning
+        // Check for recent duplicate (within 30 seconds) to prevent rapid rescanning
         const recentDuplicate = findRecentDuplicate(code);
         if (recentDuplicate && recentDuplicate.user === currentUser.username) {
-            // Same user trying to scan the same code within 20 seconds - show alert only
+            // Same user trying to scan the same code within 30 seconds - show alert only
             highlightDetectedCode(location, true, code, recentDuplicate);
             showDuplicateAlert(code, recentDuplicate);
             isProcessingCode = false; // Reset flag before return
@@ -2073,8 +2108,8 @@ async function handleCodeDetection(code, codeType = 'كود', location = null) {
         
         playSuccessSound(isDuplicate);
         
-        // Pause scanning briefly to show indicators
-        pauseScanningBriefly(isDuplicate ? 1500 : 1000);
+        // Pause scanning briefly to show indicators (increased duration)
+        pauseScanningBriefly(isDuplicate ? 3000 : 2500);
         
         showLoading(false);
         
@@ -2367,25 +2402,45 @@ function getTelegramButtonText(status) {
     }
 }
 
-function saveResults() {
-    localStorage.setItem('scannedResults', JSON.stringify(scannedResults));
+async function saveResults() {
+    // Results are now automatically saved via API when created
+    // This function is kept for compatibility
 }
 
-function loadResults() {
-    const saved = localStorage.getItem('scannedResults');
-    if (saved) {
-        scannedResults = JSON.parse(saved);
-        // Clear the results list first
-        resultsList.innerHTML = '';
-        // Display results in reverse order (newest first)
-        scannedResults.slice().reverse().forEach(result => {
-            displayResultFromLoad(result);
-        });
-        // Update all duplicate indicators after loading
-        updateAllDuplicateIndicators();
+async function loadResults() {
+    try {
+        const response = await fetch('/api/scans?limit=100');
+        const data = await response.json();
         
-        // Resume failed auto-sends if auto-send is enabled
-        resumeFailedSends();
+        if (data.success && data.scans) {
+            scannedResults = data.scans.map(scan => ({
+                id: scan.id,
+                code: scan.barcode,
+                codeType: scan.code_type,
+                user: scan.username,
+                timestamp: scan.scan_time,
+                image: scan.image_data || '',
+                telegramStatus: scan.telegram_sent === 1 ? 'success' : 'pending',
+                telegramAttempts: scan.telegram_attempts || 0
+            }));
+            
+            // Clear the results list first
+            resultsList.innerHTML = '';
+            
+            // Display results in reverse order (newest first)
+            scannedResults.slice().reverse().forEach(result => {
+                displayResultFromLoad(result);
+            });
+            
+            // Update all duplicate indicators after loading
+            updateAllDuplicateIndicators();
+            
+            // Resume failed auto-sends if auto-send is enabled
+            resumeFailedSends();
+        }
+    } catch (error) {
+        console.error('Error loading results:', error);
+        scannedResults = [];
     }
 }
 
@@ -2530,33 +2585,47 @@ function closeSettingsModal() {
     settingsModal.style.display = 'none';
 }
 
-function loadSettingsToModal() {
-    const settings = getSettings();
-    botToken.value = settings.botToken || '';
-    chatId.value = settings.chatId || '';
-    autoSend.checked = settings.autoSend || false;
+async function loadSettingsToModal() {
+    if (!currentUser) return;
+    
+    try {
+        const settings = await loadAllSettings();
+        botToken.value = settings.botToken || '';
+        chatId.value = settings.chatId || '';
+        autoSend.checked = settings.autoSend === 'true';
+    } catch (error) {
+        console.error('Error loading settings:', error);
+    }
 }
 
-function saveSettingsData() {
-    if (!isOwner) {
+async function saveSettingsData() {
+    if (!isOwner || !currentUser) {
         showAlert('حفظ الإعدادات متاح للأونر فقط', 'error');
         return;
     }
     
-    const settings = {
-        botToken: botToken.value.trim(),
-        chatId: chatId.value.trim(),
-        autoSend: autoSend.checked
-    };
-    
-    localStorage.setItem('telegramSettings', JSON.stringify(settings));
-    closeSettingsModal();
-    showAlert('تم حفظ الإعدادات بنجاح', 'success');
+    try {
+        await saveSetting('botToken', botToken.value.trim(), 'string');
+        await saveSetting('chatId', chatId.value.trim(), 'string');
+        await saveSetting('autoSend', autoSend.checked.toString(), 'boolean');
+        
+        closeSettingsModal();
+        showAlert('تم حفظ الإعدادات بنجاح', 'success');
+    } catch (error) {
+        console.error('Error saving settings:', error);
+        showAlert('خطأ في حفظ الإعدادات', 'error');
+    }
 }
 
-function getSettings() {
-    const saved = localStorage.getItem('telegramSettings');
-    return saved ? JSON.parse(saved) : {};
+async function getSettings() {
+    if (!currentUser) return {};
+    
+    try {
+        return await loadAllSettings();
+    } catch (error) {
+        console.error('Error getting settings:', error);
+        return {};
+    }
 }
 
 function loadSettings() {
@@ -3004,19 +3073,127 @@ function showCameraCenterRipple(isDuplicate = false) {
     }
 }
 
-function pauseScanningBriefly(duration = 1000) {
+function pauseScanningBriefly(duration = 2500) {
     const originalIsScanning = isScanning;
     
     if (originalIsScanning) {
         // Temporarily pause scanning
         isScanning = false;
         
+        // Add visual feedback to camera container
+        if (cameraContainer) {
+            cameraContainer.classList.remove('scanning-active');
+            cameraContainer.classList.add('scanning-paused');
+        }
+        
+        // Show pause indicator to user
+        showScanPauseIndicator(duration);
+        
         // Resume after duration
-        setTimeout(() => {
+        pauseTimeout = setTimeout(() => {
             if (originalIsScanning) {
                 isScanning = true;
+                removeScanPauseIndicator();
+                
+                // Restore active scanning visual feedback
+                if (cameraContainer) {
+                    cameraContainer.classList.remove('scanning-paused');
+                    cameraContainer.classList.add('scanning-active');
+                }
             }
+            pauseTimeout = null;
         }, duration);
+    }
+}
+
+// Skip pause function
+function skipPause() {
+    if (pauseTimeout) {
+        clearTimeout(pauseTimeout);
+        pauseTimeout = null;
+        
+        isScanning = true;
+        removeScanPauseIndicator();
+        
+        // Restore active scanning visual feedback
+        if (cameraContainer) {
+            cameraContainer.classList.remove('scanning-paused');
+            cameraContainer.classList.add('scanning-active');
+        }
+        
+        showAlert('تم تخطي التوقف المؤقت', 'info');
+    }
+}
+
+// Show visual indicator that scanning is paused
+function showScanPauseIndicator(duration) {
+    // Remove existing indicator if any
+    removeScanPauseIndicator();
+    
+    const indicator = document.createElement('div');
+    indicator.className = 'scan-pause-indicator';
+    indicator.innerHTML = `
+        <div class="pause-content">
+            <i class="fas fa-pause-circle"></i>
+            <span class="pause-message">توقف مؤقت...</span>
+            <button class="skip-pause-btn" onclick="skipPause()">
+                <i class="fas fa-forward"></i> تخطي
+            </button>
+            <div class="pause-timer">
+                <div class="pause-progress"></div>
+            </div>
+        </div>
+    `;
+    
+    // Style the indicator
+    indicator.style.position = 'absolute';
+    indicator.style.top = '10px';
+    indicator.style.left = '50%';
+    indicator.style.transform = 'translateX(-50%)';
+    indicator.style.background = 'rgba(0, 0, 0, 0.8)';
+    indicator.style.color = 'white';
+    indicator.style.padding = '10px 20px';
+    indicator.style.borderRadius = '25px';
+    indicator.style.zIndex = '1002';
+    indicator.style.fontSize = '14px';
+    indicator.style.textAlign = 'center';
+    indicator.style.boxShadow = '0 4px 15px rgba(0,0,0,0.3)';
+    indicator.style.animation = 'fadeInDown 0.3s ease-out';
+    
+    // Style the progress bar
+    const progressBar = indicator.querySelector('.pause-progress');
+    progressBar.style.width = '100px';
+    progressBar.style.height = '3px';
+    progressBar.style.background = 'rgba(255,255,255,0.3)';
+    progressBar.style.borderRadius = '2px';
+    progressBar.style.margin = '8px auto 0';
+    progressBar.style.overflow = 'hidden';
+    progressBar.style.position = 'relative';
+    
+    // Add progress animation
+    progressBar.innerHTML = '<div class="progress-fill"></div>';
+    const progressFill = progressBar.querySelector('.progress-fill');
+    progressFill.style.width = '100%';
+    progressFill.style.height = '100%';
+    progressFill.style.background = '#4CAF50';
+    progressFill.style.borderRadius = '2px';
+    progressFill.style.animation = `progressCountdown ${duration}ms linear`;
+    
+    // Add to camera container
+    if (cameraContainer && cameraContainer.style.display !== 'none') {
+        cameraContainer.appendChild(indicator);
+    }
+}
+
+function removeScanPauseIndicator() {
+    const existingIndicator = document.querySelector('.scan-pause-indicator');
+    if (existingIndicator) {
+        existingIndicator.style.animation = 'fadeOutUp 0.3s ease-out';
+        setTimeout(() => {
+            if (existingIndicator.parentNode) {
+                existingIndicator.remove();
+            }
+        }, 300);
     }
 }
 
@@ -3109,6 +3286,194 @@ window.addEventListener('click', (e) => {
         closeDetailedStatsModal();
     }
 });
+
+// ========== دوال إدارة الجلسات والإعدادات (بدلاً من localStorage) ==========
+
+// دوال إدارة الـ Cookies
+function setCookie(name, value, days = 30) {
+    const expires = new Date();
+    expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
+    document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/`;
+}
+
+function getCookie(name) {
+    const nameEQ = name + "=";
+    const ca = document.cookie.split(';');
+    for (let i = 0; i < ca.length; i++) {
+        let c = ca[i];
+        while (c.charAt(0) == ' ') c = c.substring(1, c.length);
+        if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length, c.length);
+    }
+    return null;
+}
+
+function deleteCookie(name) {
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+}
+
+// إنشاء جلسة جديدة
+async function createSession(user, expiresIn = 86400) {
+    try {
+        const response = await fetch('/api/session', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                user_id: user.id,
+                username: user.username,
+                session_data: {
+                    login_time: new Date().toISOString(),
+                    user_agent: navigator.userAgent,
+                    is_owner: user.isOwner || false
+                },
+                expires_in: expiresIn
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            setCookie('session_id', data.session_id, expiresIn / 86400); // Convert to days
+            console.log('✅ تم إنشاء الجلسة بنجاح');
+            return data.session_id;
+        } else {
+            console.error('❌ فشل في إنشاء الجلسة');
+            return null;
+        }
+    } catch (error) {
+        console.error('خطأ في إنشاء الجلسة:', error);
+        return null;
+    }
+}
+
+// تحميل الجلسة الموجودة
+async function loadSession(sessionId) {
+    try {
+        const response = await fetch(`/api/session/${sessionId}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            // Extract user info from session data
+            const sessionData = data.session.session_data ? JSON.parse(data.session.session_data) : {};
+            const user = {
+                id: data.session.user_id,
+                username: data.session.username,
+                isOwner: sessionData.is_owner || false
+            };
+            
+            console.log('✅ تم تحميل الجلسة بنجاح');
+            return { success: true, session: { ...data.session, user } };
+        } else {
+            // الجلسة منتهية الصلاحية أو غير صالحة
+            deleteCookie('session_id');
+            console.log('⚠️ الجلسة منتهية الصلاحية');
+            return { success: false };
+        }
+    } catch (error) {
+        console.error('خطأ في تحميل الجلسة:', error);
+        deleteCookie('session_id');
+        return { success: false };
+    }
+}
+
+// إنهاء الجلسة
+async function endSession(sessionId) {
+    try {
+        await fetch(`/api/session/${sessionId}`, {
+            method: 'DELETE'
+        });
+        console.log('✅ تم إنهاء الجلسة بنجاح');
+    } catch (error) {
+        console.error('خطأ في إنهاء الجلسة:', error);
+    }
+}
+
+// حفظ إعداد مستخدم
+async function saveSetting(key, value, type = 'string') {
+    if (!currentUser) return;
+    
+    try {
+        await fetch('/api/settings', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                user_id: currentUser.id,
+                setting_key: key,
+                setting_value: value,
+                setting_type: type
+            })
+        });
+    } catch (error) {
+        console.error('خطأ في حفظ الإعداد:', error);
+    }
+}
+
+// تحميل إعداد مستخدم
+async function loadSetting(key, defaultValue = null) {
+    if (!currentUser) return defaultValue;
+    
+    try {
+        const response = await fetch(`/api/settings/${currentUser.id}/${key}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            return data.setting.value;
+        }
+    } catch (error) {
+        console.error('خطأ في تحميل الإعداد:', error);
+    }
+    
+    return defaultValue;
+}
+
+// تحميل جميع إعدادات المستخدم
+async function loadAllSettings() {
+    if (!currentUser) return {};
+    
+    try {
+        const response = await fetch(`/api/settings/${currentUser.id}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            const settings = {};
+            Object.keys(data.settings).forEach(key => {
+                settings[key] = data.settings[key].value;
+            });
+            return settings;
+        }
+    } catch (error) {
+        console.error('خطأ في تحميل الإعدادات:', error);
+    }
+    
+    return {};
+}
+
+// تحديث الجلسة بشكل دوري
+setInterval(async () => {
+    const sessionId = getCookie('session_id');
+    if (sessionId && currentUser) {
+        try {
+            await fetch(`/api/session/${sessionId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    session_data: {
+                        last_activity: new Date().toISOString(),
+                        page: window.location.pathname,
+                        is_owner: isOwner
+                    }
+                })
+            });
+        } catch (error) {
+            console.debug('خطأ في تحديث الجلسة:', error);
+        }
+    }
+}, 300000); // كل 5 دقائق
 
 // Clean up when page is about to unload
 window.addEventListener('beforeunload', () => {

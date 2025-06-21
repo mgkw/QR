@@ -2504,3 +2504,138 @@ input, textarea {
         min-width: auto;
     }
 }
+
+/* Pause Indicator Styles */
+.scan-pause-indicator {
+    animation: fadeInDown 0.3s ease-out;
+}
+
+.scan-pause-indicator .pause-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+}
+
+.scan-pause-indicator i {
+    font-size: 18px;
+    color: #ffc107;
+    animation: pausePulse 1.5s infinite;
+}
+
+.pause-message {
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.skip-pause-btn {
+    background: rgba(255, 193, 7, 0.9);
+    color: #000;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin: 2px 0;
+}
+
+.skip-pause-btn:hover {
+    background: #ffc107;
+    transform: scale(1.05);
+}
+
+.skip-pause-btn i {
+    margin-right: 2px;
+}
+
+.pause-timer {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+}
+
+/* Pause Indicator Animations */
+@keyframes fadeInDown {
+    0% {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-20px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
+@keyframes fadeOutUp {
+    0% {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+    100% {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-20px);
+    }
+}
+
+@keyframes pausePulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.7;
+        transform: scale(1.1);
+    }
+}
+
+@keyframes progressCountdown {
+    0% {
+        transform: scaleX(1);
+    }
+    100% {
+        transform: scaleX(0);
+    }
+}
+
+/* Improved scan line for better visibility */
+.scan-line {
+    position: absolute;
+    top: 50%;
+    left: 5%;
+    right: 5%;
+    height: 3px;
+    background: linear-gradient(90deg, 
+        transparent, 
+        rgba(255, 0, 0, 0.8), 
+        rgba(255, 255, 0, 1), 
+        rgba(255, 0, 0, 0.8), 
+        transparent
+    );
+    animation: scan 2s linear infinite;
+    border-radius: 2px;
+    box-shadow: 0 0 10px rgba(255, 255, 0, 0.8);
+    z-index: 10;
+}
+
+/* Enhanced camera container for better scanning feedback */
+.camera-container.scanning {
+    border: 2px solid #007bff;
+    box-shadow: 0 0 20px rgba(0, 123, 255, 0.4);
+}
+
+.camera-container.scanning .scan-line {
+    animation-duration: 1.5s;
+}
+
+/* Additional feedback styles */
+.scanning-active {
+    border-color: #28a745 !important;
+    box-shadow: 0 0 25px rgba(40, 167, 69, 0.6) !important;
+}
+
+.scanning-paused {
+    border-color: #ffc107 !important;
+    box-shadow: 0 0 25px rgba(255, 193, 7, 0.6) !important;
+}

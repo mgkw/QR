@@ -1,5 +1,6 @@
 // متغيرات عامة
 let currentUser = null;
+let currentSession = null;
 let isScanning = false;
 let stream = null;
 let scanInterval = null;
@@ -48,15 +49,10 @@ function initApp() {
         }
     });
     
-    // فحص المستخدم المحفوظ
-    const savedUser = localStorage.getItem('currentUser');
-    if (savedUser) {
-        try {
-            currentUser = JSON.parse(savedUser);
-            updateUI();
-        } catch (e) {
-            localStorage.removeItem('currentUser');
-        }
+    // فحص الجلسة المحفوظة
+    const sessionId = getCookie('session_id');
+    if (sessionId) {
+        loadSession(sessionId);
     }
     
     console.log('🚀 تم تشغيل التطبيق بنجاح');
@@ -97,7 +93,8 @@ async function handleLogin(e) {
         
         if (data.success) {
             currentUser = data.user;
-            localStorage.setItem('currentUser', JSON.stringify(currentUser));
+            // إنشاء جلسة جديدة
+            await createSession(data.user);
             hideLoginModal();
             updateUI();
             showAlert(`مرحباً ${username}!`, 'success');
@@ -113,9 +110,13 @@ async function handleLogin(e) {
 }
 
 // تسجيل الخروج
-function logout() {
+async function logout() {
+    if (currentSession) {
+        await endSession(currentSession.id);
+    }
     currentUser = null;
-    localStorage.removeItem('currentUser');
+    currentSession = null;
+    deleteCookie('session_id');
     updateUI();
     stopScanning();
     showAlert('تم تسجيل الخروج بنجاح', 'info');
@@ -538,7 +539,217 @@ function handleCameraError(error) {
     stopScanBtn.classList.add('hidden');
 }
 
+// ========== دوال إدارة الجلسات والإعدادات (بدلاً من localStorage) ==========
+
+// دوال إدارة الـ Cookies
+function setCookie(name, value, days = 30) {
+    const expires = new Date();
+    expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
+    document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/`;
+}
+
+function getCookie(name) {
+    const nameEQ = name + "=";
+    const ca = document.cookie.split(';');
+    for (let i = 0; i < ca.length; i++) {
+        let c = ca[i];
+        while (c.charAt(0) == ' ') c = c.substring(1, c.length);
+        if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length, c.length);
+    }
+    return null;
+}
+
+function deleteCookie(name) {
+    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+}
+
+// إنشاء جلسة جديدة
+async function createSession(user) {
+    try {
+        const response = await fetch('/api/session', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                user_id: user.id,
+                username: user.username,
+                session_data: {
+                    login_time: new Date().toISOString(),
+                    user_agent: navigator.userAgent
+                },
+                expires_in: 86400 // 24 ساعة
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            currentSession = {
+                id: data.session_id,
+                expires_at: data.expires_at
+            };
+            setCookie('session_id', data.session_id, 1); // حفظ في cookie لمدة يوم واحد
+            console.log('✅ تم إنشاء الجلسة بنجاح');
+        } else {
+            console.error('❌ فشل في إنشاء الجلسة');
+        }
+    } catch (error) {
+        console.error('خطأ في إنشاء الجلسة:', error);
+    }
+}
+
+// تحميل الجلسة الموجودة
+async function loadSession(sessionId) {
+    try {
+        const response = await fetch(`/api/session/${sessionId}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            currentSession = data.session;
+            // إعادة تعيين بيانات المستخدم من الجلسة
+            const userResponse = await fetch(`/api/users`);
+            const userData = await userResponse.json();
+            
+            if (userData.success) {
+                const user = userData.users.find(u => u.id === currentSession.user_id);
+                if (user) {
+                    currentUser = {
+                        id: user.id,
+                        username: user.username,
+                        full_name: user.full_name,
+                        is_admin: Boolean(user.is_admin)
+                    };
+                    updateUI();
+                    console.log('✅ تم تحميل الجلسة بنجاح');
+                }
+            }
+        } else {
+            // الجلسة منتهية الصلاحية أو غير صالحة
+            deleteCookie('session_id');
+            console.log('⚠️ الجلسة منتهية الصلاحية');
+        }
+    } catch (error) {
+        console.error('خطأ في تحميل الجلسة:', error);
+        deleteCookie('session_id');
+    }
+}
+
+// إنهاء الجلسة
+async function endSession(sessionId) {
+    try {
+        await fetch(`/api/session/${sessionId}`, {
+            method: 'DELETE'
+        });
+        console.log('✅ تم إنهاء الجلسة بنجاح');
+    } catch (error) {
+        console.error('خطأ في إنهاء الجلسة:', error);
+    }
+}
+
+// حفظ إعداد مستخدم
+async function saveSetting(key, value, type = 'string') {
+    if (!currentUser) return;
+    
+    try {
+        await fetch('/api/settings', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                user_id: currentUser.id,
+                setting_key: key,
+                setting_value: value,
+                setting_type: type
+            })
+        });
+    } catch (error) {
+        console.error('خطأ في حفظ الإعداد:', error);
+    }
+}
+
+// تحميل إعداد مستخدم
+async function loadSetting(key, defaultValue = null) {
+    if (!currentUser) return defaultValue;
+    
+    try {
+        const response = await fetch(`/api/settings/${currentUser.id}/${key}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            return data.setting.value;
+        }
+    } catch (error) {
+        console.error('خطأ في تحميل الإعداد:', error);
+    }
+    
+    return defaultValue;
+}
+
+// تحميل جميع إعدادات المستخدم
+async function loadAllSettings() {
+    if (!currentUser) return {};
+    
+    try {
+        const response = await fetch(`/api/settings/${currentUser.id}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            const settings = {};
+            Object.keys(data.settings).forEach(key => {
+                settings[key] = data.settings[key].value;
+            });
+            return settings;
+        }
+    } catch (error) {
+        console.error('خطأ في تحميل الإعدادات:', error);
+    }
+    
+    return {};
+}
+
+// تنظيف الجلسات منتهية الصلاحية (للمدير)
+async function cleanupSessions() {
+    if (!currentUser || !currentUser.is_admin) return;
+    
+    try {
+        const response = await fetch('/api/cleanup-sessions', {
+            method: 'POST'
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            console.log('✅ تم تنظيف الجلسات:', data.message);
+        }
+    } catch (error) {
+        console.error('خطأ في تنظيف الجلسات:', error);
+    }
+}
+
+// تحديث الجلسة بشكل دوري
+setInterval(async () => {
+    if (currentSession && currentUser) {
+        try {
+            await fetch(`/api/session/${currentSession.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    session_data: {
+                        last_activity: new Date().toISOString(),
+                        page: window.location.pathname
+                    }
+                })
+            });
+        } catch (error) {
+            console.debug('خطأ في تحديث الجلسة:', error);
+        }
+    }
+}, 300000); // كل 5 دقائق
+
 // إعادة تحميل الإحصائيات كل 30 ثانية
 setInterval(loadStats, 30000);
 
-console.log('✅ تم تحميل النظام بنجاح - Node.js + Express + SQLite'); 
+console.log('✅ تم تحميل النظام بنجاح - Node.js + Express + SQLite with Sessions'); 
