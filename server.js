@@ -709,6 +709,23 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+// مراقبة صحة النظام (للـ Render وأدوات المراقبة)
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    timestamp: new Date().toISOString(),
+    database: {
+      type: isTurso() ? 'Turso Cloud' : 'SQLite Local',
+      connected: !!db,
+      url: isTurso() ? config.database.url : 'local'
+    },
+    environment: process.env.NODE_ENV || 'development',
+    version: '1.0.0'
+  });
+});
+
 // ==================== Middleware ====================
 
 // التحقق من صحة الجلسة (للمستخدمين العاديين)

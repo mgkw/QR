@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: qr-scanner-turso
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: TURSO_DATABASE_URL
+        value: https://takyd-tlbat-mgkw.turso.io
+      - key: TURSO_AUTH_TOKEN
+        fromSecret: TURSO_AUTH_TOKEN
+    healthCheckPath: /api/status
+    numInstances: 1
+    scaling:
+      minInstances: 1
+      maxInstances: 1
+    disk:
+      name: data
+      mountPath: /app/database
+      sizeGB: 1 
