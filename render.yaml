@@ -1,0 +1,39 @@
+services:
+  # Web Service (Node.js Application)
+  - type: web
+    name: qr-scanner-nodejs
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+    healthCheckPath: /api/health
+    numInstances: 1
+    
+# Build settings
+buildCommand: npm install
+startCommand: npm start
+
+# Auto-deploy settings
+autoDeploy: true
+
+# Environment variables
+envVars:
+  NODE_ENV: production
+  
+# Health check
+healthCheckPath: /api/health
+healthCheckInterval: 30000
+healthCheckTimeout: 10000
+
+# Resources
+memory: 512MB
+cpu: 0.5
+
+# Static files
+staticPublishPath: ./public 

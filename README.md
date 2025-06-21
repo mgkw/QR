@@ -222,6 +222,21 @@ PORT=3001 npm start
 
 ## 🚀 النشر على الخادم
 
+### النشر على Render (الأسهل) ⭐
+```bash
+# 1. ادفع المشروع إلى GitHub
+git add .
+git commit -m "إعداد النشر"
+git push origin main
+
+# 2. اذهب إلى render.com
+# 3. اربط مستودع GitHub
+# 4. استخدم الإعدادات:
+#    Build Command: npm install
+#    Start Command: npm start
+```
+📖 **دليل مفصل**: [RENDER_DEPLOY.md](RENDER_DEPLOY.md)
+
 ### النشر على Heroku
 ```bash
 # إنشاء Procfile
