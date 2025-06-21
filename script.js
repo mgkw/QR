@@ -1408,6 +1408,11 @@ function updateUI() {
         
         // Update scan buttons and flash visibility
         updateScanButtons();
+        
+        // Show auto-send status
+        if (isOwner) {
+            showAutoSendStatus();
+        }
     } else {
         loginSection.style.display = 'flex';
         userInfo.style.display = 'none';
@@ -1417,6 +1422,49 @@ function updateUI() {
         settingsBtn.style.display = 'none';
         detailedStatsBtn.style.display = 'none';
         flashToggleBtn.style.display = 'none';
+        
+        // Hide auto-send status
+        hideAutoSendStatus();
+    }
+}
+
+// Show auto-send status indicator
+async function showAutoSendStatus() {
+    try {
+        const settings = await getSettings();
+        let statusElement = document.getElementById('auto-send-status');
+        
+        if (!statusElement) {
+            // Create status element if it doesn't exist
+            statusElement = document.createElement('div');
+            statusElement.id = 'auto-send-status';
+            statusElement.className = 'auto-send-status';
+            
+            // Insert after user info
+            const userInfoContainer = userInfo.parentElement;
+            userInfoContainer.insertBefore(statusElement, userInfo.nextSibling);
+        }
+        
+        if (settings.autoSend && settings.botToken && settings.chatId) {
+            statusElement.innerHTML = '✅ الإرسال التلقائي للتليجرام مُفعل';
+            statusElement.className = 'auto-send-status enabled';
+        } else {
+            statusElement.innerHTML = '⚠️ الإرسال التلقائي للتليجرام مُعطل';
+            statusElement.className = 'auto-send-status disabled';
+        }
+        
+        statusElement.style.display = 'block';
+        
+    } catch (error) {
+        console.error('Error showing auto-send status:', error);
+    }
+}
+
+// Hide auto-send status indicator
+function hideAutoSendStatus() {
+    const statusElement = document.getElementById('auto-send-status');
+    if (statusElement) {
+        statusElement.style.display = 'none';
     }
 }
 
@@ -2095,12 +2143,15 @@ async function handleCodeDetection(code, codeType = 'كود', location = null) {
         displayResult(scanResult);
         
         // Auto-send to Telegram if enabled
-        const settings = getSettings();
+        const settings = await getSettings();
         if (settings.autoSend && settings.botToken && settings.chatId) {
             // Send to Telegram asynchronously (don't wait)
+            console.log('🚀 الإرسال التلقائي مفعل - إرسال للتليجرام:', scanResult.code);
             sendToTelegram(scanResult).catch(error => {
                 console.error('Auto-send to Telegram failed:', error);
             });
+        } else {
+            console.log('⚠️ الإرسال التلقائي غير مفعل أو الإعدادات ناقصة');
         }
         
         // Success feedback with appropriate message
@@ -2443,7 +2494,7 @@ async function loadResults() {
             updateAllDuplicateIndicators();
             
             // Resume failed auto-sends if auto-send is enabled
-            resumeFailedSends();
+            await resumeFailedSends();
         }
     } catch (error) {
         console.error('Error loading results:', error);
@@ -2451,8 +2502,8 @@ async function loadResults() {
     }
 }
 
-function resumeFailedSends() {
-    const settings = getSettings();
+async function resumeFailedSends() {
+    const settings = await getSettings();
     if (!settings.autoSend || !settings.botToken || !settings.chatId) {
         return;
     }
@@ -2627,6 +2678,11 @@ async function saveSettingsData() {
         
         closeSettingsModal();
         showAlert('تم حفظ الإعدادات بنجاح', 'success');
+        
+        // Update auto-send status indicator
+        if (isOwner) {
+            showAutoSendStatus();
+        }
     } catch (error) {
         console.error('Error saving settings:', error);
         showAlert('خطأ في حفظ الإعدادات', 'error');

@@ -1191,6 +1191,42 @@ body {
     border-left: 4px solid #17a2b8;
 }
 
+/* Auto-send Status Indicator */
+.auto-send-status {
+    padding: 8px 15px;
+    margin: 10px 0;
+    border-radius: 25px;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: center;
+    transition: all 0.3s ease;
+    display: none;
+}
+
+.auto-send-status.enabled {
+    background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+    color: #155724;
+    border: 1px solid #c3e6cb;
+    box-shadow: 0 2px 8px rgba(21, 87, 36, 0.1);
+}
+
+.auto-send-status.disabled {
+    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+    color: #856404;
+    border: 1px solid #ffeaa7;
+    box-shadow: 0 2px 8px rgba(133, 100, 4, 0.1);
+}
+
+.auto-send-status.enabled:hover {
+    background: linear-gradient(135deg, #c3e6cb 0%, #b8dcc3 100%);
+    transform: translateY(-1px);
+}
+
+.auto-send-status.disabled:hover {
+    background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%);
+    transform: translateY(-1px);
+}
+
 /* Mobile Alert Enhancements */
 @media (max-width: 768px) {
     .alert {
