@@ -120,28 +120,28 @@ function bindEventListeners() {
     
     // Login events
     if (loginBtn) {
-        loginBtn.addEventListener('click', handleLogin);
+loginBtn.addEventListener('click', handleLogin);
         console.log('✅ loginBtn event bound');
     } else {
         console.error('❌ loginBtn element not found');
     }
     
     if (ownerLoginBtn) {
-        ownerLoginBtn.addEventListener('click', handleOwnerLogin);
+ownerLoginBtn.addEventListener('click', handleOwnerLogin);
         console.log('✅ ownerLoginBtn event bound');
     } else {
         console.error('❌ ownerLoginBtn element not found');
     }
     
     if (showOwnerLogin) {
-        showOwnerLogin.addEventListener('click', toggleOwnerLogin);
+showOwnerLogin.addEventListener('click', toggleOwnerLogin);
         console.log('✅ showOwnerLogin event bound');
     } else {
         console.error('❌ showOwnerLogin element not found');
     }
     
     if (logoutBtn) {
-        logoutBtn.addEventListener('click', handleLogout);
+logoutBtn.addEventListener('click', handleLogout);
         console.log('✅ logoutBtn event bound');
     } else {
         console.error('❌ logoutBtn element not found');
@@ -333,42 +333,42 @@ function initApp() {
 
 // Keyboard event listeners
 function bindKeyboardEvents() {
-    // Enter key for login
+// Enter key for login
     if (usernameInput) {
-        usernameInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                if (passwordInput.style.display === 'none') {
-                    handleLogin();
-                } else {
+usernameInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        if (passwordInput.style.display === 'none') {
+            handleLogin();
+        } else {
                     passwordInput?.focus();
-                }
-            }
-        });
+        }
+    }
+});
     }
 
     if (passwordInput) {
-        passwordInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                handleOwnerLogin();
-            }
-        });
+passwordInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        handleOwnerLogin();
+    }
+});
     }
 
     if (newUsername) {
-        newUsername.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                handleAddUser();
-            }
-        });
+newUsername.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        handleAddUser();
+    }
+});
     }
 
-    // Remember me checkbox change event
+// Remember me checkbox change event
     if (rememberMeCheckbox) {
-        rememberMeCheckbox.addEventListener('change', function() {
-            if (this.checked) {
-                showAlert('سيتم حفظ تسجيل الدخول لمدة 30 يوماً', 'info');
-            }
-        });
+rememberMeCheckbox.addEventListener('change', function() {
+    if (this.checked) {
+        showAlert('سيتم حفظ تسجيل الدخول لمدة 30 يوماً', 'info');
+    }
+});
     }
 }
 
