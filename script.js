@@ -1079,7 +1079,25 @@ async function startScanning() {
             video.onloadedmetadata = resolve;
         });
 
-        // Initialize Quagga
+        // Initialize dual scanning system
+        await initializeDualScanning();
+        
+        isScanning = true;
+        updateScanButtons();
+        showLoading(false);
+        showAlert('تم بدء المسح المتطور (QR + باركود)', 'success');
+
+    } catch (error) {
+        console.error('Camera access error:', error);
+        showAlert('خطأ في الوصول للكاميرا. تأكد من منح الإذن.', 'error');
+        showLoading(false);
+    }
+}
+
+// Initialize dual scanning system (jsQR + QuaggaJS)
+async function initializeDualScanning() {
+    return new Promise((resolve, reject) => {
+        // Initialize Quagga for traditional barcodes
         Quagga.init({
             inputStream: {
                 name: "Live",
@@ -1105,32 +1123,75 @@ async function startScanning() {
         }, (err) => {
             if (err) {
                 console.error('Quagga initialization error:', err);
-                showAlert('خطأ في تهيئة قارئ الباركود', 'error');
-                showLoading(false);
+                reject(err);
                 return;
             }
             
+            // Start Quagga for traditional barcodes
             Quagga.start();
-            isScanning = true;
-            updateScanButtons();
-            showLoading(false);
-            showAlert('تم بدء المسح بنجاح', 'success');
+            
+            // Handle traditional barcode detection
+            Quagga.onDetected((result) => {
+                handleCodeDetection(result.codeResult.code, 'باركود');
+            });
+            
+            // Start QR Code scanning loop
+            startQRScanning();
+            
+            resolve();
         });
+    });
+}
 
-        // Handle barcode detection
-        Quagga.onDetected(handleBarcodeDetection);
+// QR Code scanning using jsQR
+function startQRScanning() {
+    const qrScanInterval = setInterval(() => {
+        if (!isScanning) {
+            clearInterval(qrScanInterval);
+            return;
+        }
+        
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            scanForQRCode();
+        }
+    }, 250); // Scan every 250ms for QR codes
+}
 
+function scanForQRCode() {
+    // Create a temporary canvas for QR scanning
+    const qrCanvas = document.createElement('canvas');
+    const qrContext = qrCanvas.getContext('2d');
+    
+    qrCanvas.width = video.videoWidth;
+    qrCanvas.height = video.videoHeight;
+    
+    qrContext.drawImage(video, 0, 0, qrCanvas.width, qrCanvas.height);
+    
+    // Get image data for jsQR
+    const imageData = qrContext.getImageData(0, 0, qrCanvas.width, qrCanvas.height);
+    
+    try {
+        // Scan for QR code
+        const qrCode = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: "dontInvert"
+        });
+        
+        if (qrCode) {
+            handleCodeDetection(qrCode.data, 'QR كود');
+        }
     } catch (error) {
-        console.error('Camera access error:', error);
-        showAlert('خطأ في الوصول للكاميرا. تأكد من منح الإذن.', 'error');
-        showLoading(false);
+        // Silent fail for QR scanning errors
+        console.debug('QR scan error (normal):', error);
     }
 }
 
 function stopScanning() {
     if (isScanning) {
+        // Stop Quagga
         Quagga.stop();
         isScanning = false;
+        
+        // QR scanning will automatically stop when isScanning becomes false
     }
     
     if (stream) {
@@ -1140,7 +1201,7 @@ function stopScanning() {
     
     cameraContainer.style.display = 'none';
     updateScanButtons();
-    showAlert('تم إيقاف المسح', 'info');
+    showAlert('تم إيقاف المسح المتطور', 'info');
 }
 
 function updateScanButtons() {
@@ -1153,10 +1214,8 @@ function updateScanButtons() {
     }
 }
 
-// Barcode Detection Handler
-async function handleBarcodeDetection(result) {
-    const code = result.codeResult.code;
-    
+// Universal Code Detection Handler (QR + Barcode)
+async function handleCodeDetection(code, codeType = 'كود') {
     // Prevent duplicate scans within 2 seconds
     if (lastScannedCode === code && Date.now() - lastScannedTime < 2000) {
         return;
@@ -1168,13 +1227,14 @@ async function handleBarcodeDetection(result) {
     try {
         showLoading(true);
         
-        // Capture image with barcode info
-        const imageData = await captureImageWithBarcodeInfo(code);
+        // Capture image with code info
+        const imageData = await captureImageWithCodeInfo(code, codeType);
         
         // Create result object
         const scanResult = {
             id: generateId(),
             code: code,
+            codeType: codeType, // 'QR كود' or 'باركود'
             timestamp: new Date().toISOString(),
             user: currentUser.username,
             image: imageData,
@@ -1205,18 +1265,18 @@ async function handleBarcodeDetection(result) {
         showLoading(false);
         
     } catch (error) {
-        console.error('Error processing barcode:', error);
-        showAlert('خطأ في معالجة الباركود', 'error');
+        console.error('Error processing code:', error);
+        showAlert(`خطأ في معالجة ${codeType}`, 'error');
         showLoading(false);
     }
 }
 
 // Image Capture
 async function captureImage() {
-    return await captureImageWithBarcodeInfo(null);
+    return await captureImageWithCodeInfo(null, 'كود');
 }
 
-async function captureImageWithBarcodeInfo(barcodeValue) {
+async function captureImageWithCodeInfo(codeValue, codeType = 'كود') {
     return new Promise((resolve) => {
         const context = canvas.getContext('2d');
         canvas.width = video.videoWidth;
@@ -1225,8 +1285,8 @@ async function captureImageWithBarcodeInfo(barcodeValue) {
         // Draw current video frame to canvas
         context.drawImage(video, 0, 0);
         
-        // Add watermark bar with barcode info
-        addWatermarkToImage(context, canvas.width, canvas.height, barcodeValue);
+        // Add watermark bar with code info
+        addWatermarkToImage(context, canvas.width, canvas.height, codeValue, codeType);
         
         // Convert to base64
         const imageData = canvas.toDataURL('image/jpeg', 0.8);
@@ -1234,17 +1294,24 @@ async function captureImageWithBarcodeInfo(barcodeValue) {
     });
 }
 
-function addWatermarkToImage(context, width, height, barcodeValue = null) {
+function addWatermarkToImage(context, width, height, codeValue = null, codeType = 'كود') {
     // Calculate bar height (10% of image height, minimum 80px, maximum 150px)
     const barHeight = Math.max(80, Math.min(150, height * 0.1));
     const barY = height - barHeight;
+    
+    // Determine colors and icons based on code type
+    const isQR = codeType.includes('QR');
+    const borderColor = isQR ? 'rgba(255, 165, 0, 0.6)' : 'rgba(0, 150, 255, 0.6)'; // Orange for QR, Blue for Barcode
+    const codeColor = isQR ? '#ff9500' : '#00ff88'; // Orange for QR, Green for Barcode
+    const codeIcon = isQR ? '📱' : '🔢';
+    const titleIcon = isQR ? '📱' : '📊';
     
     // Draw black semi-transparent bar
     context.fillStyle = 'rgba(0, 0, 0, 0.9)';
     context.fillRect(0, barY, width, barHeight);
     
-    // Add subtle border at top
-    context.fillStyle = 'rgba(0, 150, 255, 0.6)';
+    // Add subtle border at top (color based on code type)
+    context.fillStyle = borderColor;
     context.fillRect(0, barY, width, 3);
     
     // Calculate font sizes based on bar height
@@ -1258,9 +1325,9 @@ function addWatermarkToImage(context, width, height, barcodeValue = null) {
     context.textAlign = 'left';
     context.textBaseline = 'top';
     
-    // Draw main title
+    // Draw main title with appropriate icon
     context.font = `bold ${titleFontSize}px Arial, sans-serif`;
-    const titleText = '📱 مسح الباركود';
+    const titleText = `${titleIcon} مسح الأكواد المتطور`;
     context.fillText(titleText, padding, barY + padding);
     
     // Draw current time (Baghdad timezone)
@@ -1279,21 +1346,22 @@ function addWatermarkToImage(context, width, height, barcodeValue = null) {
     context.textAlign = 'right';
     context.fillText(`🕐 ${currentTime}`, width - padding, barY + padding);
     
-    // Draw barcode value if provided (highlighted)
-    if (barcodeValue) {
+    // Draw code value if provided (highlighted with appropriate color)
+    if (codeValue) {
         context.textAlign = 'left';
         context.font = `bold ${codeFontSize}px monospace`;
-        context.fillStyle = '#00ff88'; // Bright green for barcode
-        const codeText = `🔢 ${barcodeValue}`;
+        context.fillStyle = codeColor;
+        const codeText = `${codeIcon} ${codeValue} [${codeType}]`;
         context.fillText(codeText, padding, barY + padding + titleFontSize + 8);
         
-        // Add background highlight for barcode
+        // Add background highlight for code
         const codeMetrics = context.measureText(codeText);
-        context.fillStyle = 'rgba(0, 255, 136, 0.2)';
+        const highlightColor = isQR ? 'rgba(255, 149, 0, 0.2)' : 'rgba(0, 255, 136, 0.2)';
+        context.fillStyle = highlightColor;
         context.fillRect(padding - 5, barY + padding + titleFontSize + 5, codeMetrics.width + 10, codeFontSize + 6);
         
         // Redraw the text over the highlight
-        context.fillStyle = '#00ff88';
+        context.fillStyle = codeColor;
         context.fillText(codeText, padding, barY + padding + titleFontSize + 8);
     }
     
@@ -1302,11 +1370,11 @@ function addWatermarkToImage(context, width, height, barcodeValue = null) {
     context.font = `${infoFontSize}px Arial, sans-serif`;
     context.fillStyle = '#ffffff';
     const userText = `👤 ${currentUser.username}`;
-    const userY = barcodeValue ? barY + padding + titleFontSize + codeFontSize + 16 : barY + padding + titleFontSize + 8;
+    const userY = codeValue ? barY + padding + titleFontSize + codeFontSize + 16 : barY + padding + titleFontSize + 8;
     context.fillText(userText, padding, userY);
     
     // Draw location/system info
-    const systemText = '🌍 نظام قارئ الباركود - بغداد، العراق';
+    const systemText = '🌍 نظام قارئ الأكواد المتطور - بغداد، العراق';
     context.font = `${Math.max(12, infoFontSize * 0.9)}px Arial, sans-serif`;
     context.fillStyle = '#aaaaaa';
     context.fillText(systemText, padding, barY + barHeight - infoFontSize - padding);
@@ -1317,50 +1385,92 @@ function addWatermarkToImage(context, width, height, barcodeValue = null) {
     context.textAlign = 'right';
     context.fillText('✓ معتمد', width - padding, barY + barHeight - infoFontSize - padding);
     
-    // Add decorative elements
-    drawDecorationElements(context, width, barY, barHeight, padding);
+    // Add decorative elements with code type indicator
+    drawDecorationElements(context, width, barY, barHeight, padding, isQR);
 }
 
-function drawDecorationElements(context, width, barY, barHeight, padding) {
-    // Draw small decorative line
+function drawDecorationElements(context, width, barY, barHeight, padding, isQR = false) {
+    // Draw small decorative line with appropriate color
     const lineY = barY + barHeight * 0.6;
     const lineWidth = 40;
     
-    context.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    context.strokeStyle = isQR ? 'rgba(255, 165, 0, 0.5)' : 'rgba(255, 255, 255, 0.5)';
     context.lineWidth = 2;
     context.beginPath();
     context.moveTo(padding, lineY);
     context.lineTo(padding + lineWidth, lineY);
     context.stroke();
     
-    // Draw small squares pattern on the right
+    // Draw pattern based on code type
+    if (isQR) {
+        // Draw QR-style pattern for QR codes
+        drawQRPattern(context, width, barY, barHeight, padding);
+    } else {
+        // Draw barcode-style pattern for traditional barcodes
+        drawBarcodePattern(context, width, barY, barHeight, padding);
+    }
+}
+
+function drawQRPattern(context, width, barY, barHeight, padding) {
+    // QR-like pattern (more complex for QR codes)
+    context.fillStyle = 'rgba(255, 165, 0, 0.2)';
+    const patternSize = barHeight * 0.2;
+    const patternX = width - padding - patternSize - 40;
+    const patternY = barY + padding;
+    
+    // Draw QR corner squares
+    const cornerSize = patternSize / 3;
+    
+    // Top-left corner
+    context.fillRect(patternX, patternY, cornerSize, cornerSize);
+    context.fillRect(patternX + cornerSize/3, patternY + cornerSize/3, cornerSize/3, cornerSize/3);
+    
+    // Top-right corner  
+    context.fillRect(patternX + 2*cornerSize, patternY, cornerSize, cornerSize);
+    context.fillRect(patternX + 2*cornerSize + cornerSize/3, patternY + cornerSize/3, cornerSize/3, cornerSize/3);
+    
+    // Bottom-left corner
+    context.fillRect(patternX, patternY + 2*cornerSize, cornerSize, cornerSize);
+    context.fillRect(patternX + cornerSize/3, patternY + 2*cornerSize + cornerSize/3, cornerSize/3, cornerSize/3);
+    
+    // Add some random QR-like dots
+    context.fillStyle = 'rgba(255, 165, 0, 0.3)';
+    for (let i = 0; i < 8; i++) {
+        const x = patternX + Math.random() * patternSize;
+        const y = patternY + Math.random() * patternSize;
+        context.fillRect(x, y, 2, 2);
+    }
+}
+
+function drawBarcodePattern(context, width, barY, barHeight, padding) {
+    // Traditional barcode-style vertical lines
     context.fillStyle = 'rgba(255, 255, 255, 0.2)';
+    const lineHeight = barHeight * 0.3;
+    const startX = width - padding - 60;
+    const startY = barY + barHeight * 0.2;
+    
+    // Draw vertical barcode-like lines
+    const lineWidths = [2, 1, 3, 2, 1, 4, 1, 2, 3, 1]; // Simulated barcode pattern
+    let currentX = startX;
+    
+    for (let i = 0; i < lineWidths.length; i++) {
+        if (i % 2 === 0) { // Draw bars
+            context.fillRect(currentX, startY, lineWidths[i], lineHeight);
+        }
+        currentX += lineWidths[i] + 1; // Add spacing
+    }
+    
+    // Add small squares pattern
+    context.fillStyle = 'rgba(255, 255, 255, 0.15)';
     const squareSize = 3;
     const spacing = 6;
-    const startX = width - padding - 30;
+    const squareStartX = width - padding - 30;
     
     for (let i = 0; i < 4; i++) {
         for (let j = 0; j < 2; j++) {
-            const x = startX + (i * spacing);
+            const x = squareStartX + (i * spacing);
             const y = barY + barHeight * 0.3 + (j * spacing);
             context.fillRect(x, y, squareSize, squareSize);
-        }
-    }
-    
-    // Add QR-like pattern (decorative)
-    context.fillStyle = 'rgba(255, 255, 255, 0.15)';
-    const patternSize = barHeight * 0.15;
-    const patternX = width - padding - patternSize - 50;
-    const patternY = barY + padding;
-    
-    // Draw simple QR-like pattern
-    for (let i = 0; i < 3; i++) {
-        for (let j = 0; j < 3; j++) {
-            if ((i + j) % 2 === 0) {
-                const x = patternX + (i * patternSize / 3);
-                const y = patternY + (j * patternSize / 3);
-                context.fillRect(x, y, patternSize / 3, patternSize / 3);
-            }
         }
     }
 }
@@ -1381,6 +1491,7 @@ function displayResult(result) {
         <div class="result-content">
             <div class="result-code">
                 ${isDuplicate ? `<span class="duplicate-indicator">مكرر ×${duplicateCount}</span>` : ''}
+                <span class="code-type-badge ${result.codeType && result.codeType.includes('QR') ? 'qr-badge' : 'barcode-badge'}">${result.codeType || 'كود'}</span>
                 <span class="code-text">${result.code}</span>
                 ${telegramStatusIndicator}
             </div>
@@ -1498,6 +1609,7 @@ function displayResultFromLoad(result) {
     resultItem.innerHTML = `
         <div class="result-content">
             <div class="result-code">
+                <span class="code-type-badge ${result.codeType && result.codeType.includes('QR') ? 'qr-badge' : 'barcode-badge'}">${result.codeType || 'كود'}</span>
                 <span class="code-text">${result.code}</span>
                 ${telegramStatusIndicator}
             </div>
@@ -1712,15 +1824,19 @@ async function sendToTelegram(result, isRetry = false) {
         const formData = new FormData();
         formData.append('chat_id', settings.chatId);
         formData.append('photo', imageBlob, 'barcode.jpg');
-        formData.append('caption', `📱 **مسح الباركود**
+        const codeIcon = result.codeType && result.codeType.includes('QR') ? '📱' : '🔢';
+        const systemName = result.codeType && result.codeType.includes('QR') ? 'قارئ الأكواد الذكي' : 'قارئ الباركود المتطور';
+        
+        formData.append('caption', `${codeIcon} **مسح ${result.codeType || 'الكود'}**
 
-🔢 **الكود المسوح:** \`${result.code}\`
+${codeIcon} **الكود المسوح:** \`${result.code}\`
+🏷️ **نوع الكود:** ${result.codeType || 'غير محدد'}
 👤 **المستخدم:** ${result.user}
 🕐 **التاريخ والوقت:** ${formatDateTimeBaghdad(result.timestamp)}
 🌍 **الموقع:** بغداد، العراق
 📊 **رقم المحاولة:** ${result.telegramAttempts}
 
-✅ تم التقاط هذه الصورة تلقائياً بواسطة نظام قارئ الباركود المتطور`);
+✅ تم التقاط هذه الصورة تلقائياً بواسطة نظام ${systemName}`);
         
         const response = await fetch(`https://api.telegram.org/bot${settings.botToken}/sendPhoto`, {
             method: 'POST',

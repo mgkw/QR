@@ -699,6 +699,39 @@ body {
     margin-right: 8px;
 }
 
+/* Code Type Badges */
+.code-type-badge {
+    padding: 3px 8px;
+    border-radius: 15px;
+    font-size: 0.7rem;
+    font-weight: bold;
+    margin-left: 6px;
+    display: inline-block;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border: 1px solid transparent;
+    animation: badgePulse 3s ease-in-out infinite;
+}
+
+.qr-badge {
+    background: linear-gradient(135deg, #ff9500, #ffb347);
+    color: white;
+    border-color: #ff9500;
+    box-shadow: 0 2px 8px rgba(255, 149, 0, 0.3);
+}
+
+.barcode-badge {
+    background: linear-gradient(135deg, #00ff88, #00d4aa);
+    color: white;
+    border-color: #00ff88;
+    box-shadow: 0 2px 8px rgba(0, 255, 136, 0.3);
+}
+
+@keyframes badgePulse {
+    0%, 50%, 100% { opacity: 1; }
+    25%, 75% { opacity: 0.8; }
+}
+
 .result-code {
     display: flex;
     align-items: center;
