@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initApp();
     loadStats();
     loadScans();
+    checkURLParams(); // فحص معاملات URL للدخول التلقائي
 });
 
 // تهيئة التطبيق
@@ -172,8 +173,7 @@ async function startScanning() {
         showAlert('تم بدء المسح بنجاح', 'success');
         
     } catch (error) {
-        console.error('خطأ في تشغيل الكاميرا:', error);
-        showAlert('خطأ في الوصول للكاميرا. تأكد من منح الإذن.', 'error');
+        handleCameraError(error);
     }
 }
 
@@ -466,6 +466,76 @@ function playSuccessSound() {
     } catch (error) {
         console.debug('خطأ في تشغيل الصوت:', error);
     }
+}
+
+// فحص معاملات URL للدخول التلقائي
+function checkURLParams() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const username = urlParams.get('username');
+    const password = urlParams.get('password');
+    
+    if (username && !currentUser) {
+        // ملء نموذج تسجيل الدخول تلقائياً
+        document.getElementById('username').value = username;
+        if (password) {
+            document.getElementById('password').value = password;
+        }
+        
+        // محاولة تسجيل الدخول التلقائي
+        setTimeout(() => {
+            if (!currentUser) {
+                document.getElementById('loginForm').dispatchEvent(new Event('submit'));
+            }
+        }, 500);
+        
+        // إزالة المعاملات من URL
+        const cleanURL = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, cleanURL);
+    }
+}
+
+// إضافة مستمع للضغط على Escape لإغلاق النوافذ
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        hideLoginModal();
+        // إغلاق أي نوافذ منبثقة أخرى
+        closeAnyOpenModals();
+    }
+});
+
+// إغلاق جميع النوافذ المنبثقة
+function closeAnyOpenModals() {
+    // إغلاق نافذة تسجيل الدخول
+    hideLoginModal();
+    
+    // إزالة أي تنبيهات
+    const alerts = document.querySelectorAll('.alert');
+    alerts.forEach(alert => {
+        if (alert.parentNode) {
+            alert.parentNode.removeChild(alert);
+        }
+    });
+}
+
+// تحسين معالجة أخطاء الكاميرا
+function handleCameraError(error) {
+    console.error('خطأ في الكاميرا:', error);
+    
+    let errorMessage = 'خطأ في الوصول للكاميرا.';
+    
+    if (error.name === 'NotAllowedError') {
+        errorMessage = 'تم رفض إذن الكاميرا. يرجى السماح للموقع باستخدام الكاميرا.';
+    } else if (error.name === 'NotFoundError') {
+        errorMessage = 'لم يتم العثور على كاميرا. تأكد من توصيل كاميرا.';
+    } else if (error.name === 'NotSupportedError') {
+        errorMessage = 'الكاميرا غير مدعومة في هذا المتصفح.';
+    }
+    
+    showAlert(errorMessage, 'error');
+    
+    // إعادة تعيين الأزرار
+    startScanBtn.classList.remove('hidden');
+    stopScanBtn.classList.add('hidden');
 }
 
 // إعادة تحميل الإحصائيات كل 30 ثانية

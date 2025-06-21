@@ -45,6 +45,105 @@ function createDatabaseConnection() {
     });
 }
 
+// دالة مساعدة لتنفيذ الاستعلامات
+function runQuery(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.run(sql, params, function(err) {
+            if (err) {
+                reject(err);
+            } else {
+                resolve({ id: this.lastID, changes: this.changes });
+            }
+        });
+    });
+}
+
+// دالة مساعدة للحصول على بيانات
+function getQuery(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.get(sql, params, (err, row) => {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(row);
+            }
+        });
+    });
+}
+
+// دالة مساعدة للحصول على عدة صفوف
+function getAllQuery(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.all(sql, params, (err, rows) => {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(rows);
+            }
+        });
+    });
+}
+
+// تحديث الإحصائيات اليومية
+async function updateDailyStats() {
+    try {
+        const today = new Date().toISOString().split('T')[0];
+        
+        const stats = await getQuery(`
+            SELECT 
+                COUNT(*) as total_scans,
+                COUNT(DISTINCT barcode) as unique_scans,
+                SUM(CASE WHEN is_duplicate = 1 THEN 1 ELSE 0 END) as duplicate_scans,
+                COUNT(DISTINCT user_id) as active_users,
+                SUM(CASE WHEN code_type = 'QR Code' THEN 1 ELSE 0 END) as qr_scans,
+                SUM(CASE WHEN code_type != 'QR Code' THEN 1 ELSE 0 END) as barcode_scans,
+                SUM(CASE WHEN telegram_sent = 1 THEN 1 ELSE 0 END) as telegram_sent
+            FROM scans 
+            WHERE DATE(scan_time) = ?
+        `, [today]);
+        
+        await runQuery(`
+            INSERT OR REPLACE INTO system_stats 
+            (date, total_scans, unique_scans, duplicate_scans, active_users, qr_scans, barcode_scans, telegram_sent, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `, [
+            today,
+            stats.total_scans || 0,
+            stats.unique_scans || 0,
+            stats.duplicate_scans || 0,
+            stats.active_users || 0,
+            stats.qr_scans || 0,
+            stats.barcode_scans || 0,
+            stats.telegram_sent || 0
+        ]);
+        
+    } catch (error) {
+        console.error('خطأ في تحديث الإحصائيات:', error);
+    }
+}
+
+// تسجيل العمليات (audit logging)
+async function logAction(action, tableName, recordId, userId, username, oldData = null, newData = null, req = null) {
+    try {
+        await runQuery(`
+            INSERT INTO audit_log (action, table_name, record_id, user_id, username, old_data, new_data, ip_address, user_agent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+            action,
+            tableName,
+            recordId,
+            userId,
+            username,
+            oldData ? JSON.stringify(oldData) : null,
+            newData ? JSON.stringify(newData) : null,
+            req ? (req.ip || req.connection.remoteAddress) : null,
+            req ? req.get('User-Agent') : null
+        ]);
+    } catch (error) {
+        console.error('خطأ في تسجيل العملية:', error);
+    }
+}
+
 // تهيئة قاعدة البيانات المتقدمة
 async function initDatabase() {
     console.log('🔧 تهيئة قاعدة البيانات المتقدمة...');
@@ -190,105 +289,6 @@ async function initDatabase() {
     } catch (error) {
         console.error('❌ خطأ في تهيئة قاعدة البيانات:', error);
         throw error;
-    }
-}
-
-// دالة مساعدة لتنفيذ الاستعلامات
-function runQuery(sql, params = []) {
-    return new Promise((resolve, reject) => {
-        db.run(sql, params, function(err) {
-            if (err) {
-                reject(err);
-            } else {
-                resolve({ id: this.lastID, changes: this.changes });
-            }
-        });
-    });
-}
-
-// دالة مساعدة للحصول على بيانات
-function getQuery(sql, params = []) {
-    return new Promise((resolve, reject) => {
-        db.get(sql, params, (err, row) => {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(row);
-            }
-        });
-    });
-}
-
-// دالة مساعدة للحصول على عدة صفوف
-function getAllQuery(sql, params = []) {
-    return new Promise((resolve, reject) => {
-        db.all(sql, params, (err, rows) => {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(rows);
-            }
-        });
-    });
-}
-
-// تحديث الإحصائيات اليومية
-async function updateDailyStats() {
-    try {
-        const today = new Date().toISOString().split('T')[0];
-        
-        const stats = await getQuery(`
-            SELECT 
-                COUNT(*) as total_scans,
-                COUNT(DISTINCT barcode) as unique_scans,
-                SUM(CASE WHEN is_duplicate = 1 THEN 1 ELSE 0 END) as duplicate_scans,
-                COUNT(DISTINCT user_id) as active_users,
-                SUM(CASE WHEN code_type = 'QR Code' THEN 1 ELSE 0 END) as qr_scans,
-                SUM(CASE WHEN code_type != 'QR Code' THEN 1 ELSE 0 END) as barcode_scans,
-                SUM(CASE WHEN telegram_sent = 1 THEN 1 ELSE 0 END) as telegram_sent
-            FROM scans 
-            WHERE DATE(scan_time) = ?
-        `, [today]);
-        
-        await runQuery(`
-            INSERT OR REPLACE INTO system_stats 
-            (date, total_scans, unique_scans, duplicate_scans, active_users, qr_scans, barcode_scans, telegram_sent, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        `, [
-            today,
-            stats.total_scans || 0,
-            stats.unique_scans || 0,
-            stats.duplicate_scans || 0,
-            stats.active_users || 0,
-            stats.qr_scans || 0,
-            stats.barcode_scans || 0,
-            stats.telegram_sent || 0
-        ]);
-        
-    } catch (error) {
-        console.error('خطأ في تحديث الإحصائيات:', error);
-    }
-}
-
-// تسجيل العمليات (audit logging)
-async function logAction(action, tableName, recordId, userId, username, oldData = null, newData = null, req = null) {
-    try {
-        await runQuery(`
-            INSERT INTO audit_log (action, table_name, record_id, user_id, username, old_data, new_data, ip_address, user_agent)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-            action,
-            tableName,
-            recordId,
-            userId,
-            username,
-            oldData ? JSON.stringify(oldData) : null,
-            newData ? JSON.stringify(newData) : null,
-            req ? (req.ip || req.connection.remoteAddress) : null,
-            req ? req.get('User-Agent') : null
-        ]);
-    } catch (error) {
-        console.error('خطأ في تسجيل العملية:', error);
     }
 }
 
@@ -912,8 +912,8 @@ async function startServer() {
         await initDatabase();
         
         const server = app.listen(PORT, () => {
-            console.log('\n🌟 قارئ الباركود المتطور - Node.js + SQLite');
-            console.log('=' .repeat(50));
+            console.log('\n🌟 قارئ الباركود المتطور - Node.js + SQLite Enhanced');
+            console.log('=' .repeat(60));
             console.log(`🌐 الخادم يعمل على: http://localhost:${PORT}`);
             console.log(`🗄️  قاعدة البيانات: ${dbPath}`);
             console.log('📊 قاعدة البيانات: SQLite Enhanced');
@@ -955,4 +955,4 @@ async function startServer() {
 
 startServer();
 
-module.exports = app; 
+module.exports = app;

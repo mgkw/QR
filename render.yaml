@@ -1,37 +1,90 @@
+# إعدادات Render.com المحسنة لقارئ الباركود
 services:
   # Web Service (Node.js Application)
   - type: web
-    name: qr-scanner-nodejs
+    name: qr-scanner-nodejs-enhanced
     runtime: node
     plan: free
     region: oregon
-    buildCommand: npm install --production=false
-    startCommand: npm start
+    buildCommand: |
+      npm install --production=false &&
+      npm run migrate
+    startCommand: npm run start:enhanced
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: 10000
+      - key: TZ
+        value: Asia/Baghdad
     healthCheckPath: /api/health
+    healthCheckInterval: 60000
+    healthCheckTimeout: 30000
     numInstances: 1
     
-# Build settings
-buildCommand: npm install --production=false
-startCommand: npm start
+    # دعم الملفات الثابتة
+    staticPublishPath: ./public
+    
+    # إعدادات إضافية
+    preDeployCommand: echo "تحضير النشر..."
+    
+# Build settings المحسنة
+buildCommand: |
+  echo "🚀 بدء عملية البناء..." &&
+  npm ci --production=false &&
+  echo "🔧 تهيئة قاعدة البيانات..." &&
+  npm run migrate &&
+  echo "✅ تم البناء بنجاح"
+
+startCommand: npm run start:enhanced
 
 # Auto-deploy settings
 autoDeploy: true
 
 # Environment variables
 envVars:
-  NODE_ENV: production
+  - name: NODE_ENV
+    value: production
+  - name: PORT
+    value: 10000
+  - name: TZ
+    value: Asia/Baghdad
+  - name: DATABASE_PATH
+    value: /tmp/database.db
   
-# Health check
+# Health check محسن
 healthCheckPath: /api/health
-healthCheckInterval: 30000
-healthCheckTimeout: 10000
+healthCheckInterval: 60000
+healthCheckTimeout: 30000
+healthCheckRetries: 3
 
-# Resources
+# Resources محسنة
+plan: free
 memory: 512MB
 cpu: 0.5
 
-# Static files
-staticPublishPath: ./public 
+# Disk settings
+disk: 
+  size: 1GB
+  mount: /tmp
+
+# Custom headers for security
+headers:
+  - path: /*
+    headers:
+      X-Frame-Options: DENY
+      X-Content-Type-Options: nosniff
+      X-XSS-Protection: "1; mode=block"
+      Referrer-Policy: strict-origin-when-cross-origin
+
+# Routes للصفحات المختلفة
+routes:
+  - type: rewrite
+    source: /simple
+    destination: /public/index.html
+  - type: rewrite
+    source: /api/*
+    destination: /api/*
+  - type: rewrite
+    source: /*
+    destination: /index.html 
