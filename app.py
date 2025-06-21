@@ -8,6 +8,8 @@ QR Scanner Application - Python Flask Version
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_cors import CORS
 import sqlite3
+import psycopg2
+import psycopg2.extras
 import hashlib
 import uuid
 import json
@@ -21,6 +23,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 import threading
 import time
+from urllib.parse import urlparse
 
 # إعداد Flask
 app = Flask(__name__)
@@ -36,9 +39,24 @@ CORS(app, resources={
     }
 })
 
-# إعداد قاعدة البيانات SQLite
-DATABASE = 'qr_scanner.db'
+# إعدادات قاعدة البيانات المركزية
+DATABASE_CONFIG = {
+    # قاعدة البيانات الأساسية - PostgreSQL (مركزية)
+    'PRIMARY': {
+        'type': 'postgresql',
+        'url': os.environ.get('DATABASE_URL', 'postgresql://user:password@localhost:5432/qr_scanner'),
+        'ssl_require': True
+    },
+    # قاعدة البيانات الاحتياطية - SQLite (محلية)
+    'FALLBACK': {
+        'type': 'sqlite',
+        'path': 'qr_scanner.db'
+    }
+}
+
 BAGHDAD_TZ = pytz.timezone('Asia/Baghdad')
+current_db_type = None
+db_connection = None
 
 # إعداد التسجيل
 logging.basicConfig(
@@ -51,22 +69,160 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ==================== قاعدة البيانات ====================
+# ==================== قاعدة البيانات المركزية ====================
+
+def test_database_connection(db_config):
+    """اختبار الاتصال بقاعدة البيانات"""
+    try:
+        if db_config['type'] == 'postgresql':
+            # اختبار PostgreSQL
+            conn = psycopg2.connect(
+                db_config['url'],
+                sslmode='require' if db_config.get('ssl_require') else 'disable'
+            )
+            cursor = conn.cursor()
+            cursor.execute('SELECT 1')
+            cursor.close()
+            conn.close()
+            return True
+        elif db_config['type'] == 'sqlite':
+            # اختبار SQLite
+            conn = sqlite3.connect(db_config['path'])
+            cursor = conn.cursor()
+            cursor.execute('SELECT 1')
+            cursor.close()
+            conn.close()
+            return True
+    except Exception as e:
+        logger.error(f"فشل اختبار الاتصال بـ {db_config['type']}: {e}")
+        return False
 
 def get_db_connection():
-    """إنشاء اتصال بقاعدة البيانات"""
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """إنشاء اتصال بقاعدة البيانات مع نظام Fallback"""
+    global current_db_type
+    
+    # محاولة الاتصال بقاعدة البيانات الأساسية (PostgreSQL)
+    if test_database_connection(DATABASE_CONFIG['PRIMARY']):
+        if current_db_type != 'postgresql':
+            logger.info('🔗 الاتصال بقاعدة البيانات المركزية: PostgreSQL')
+            current_db_type = 'postgresql'
+        
+        conn = psycopg2.connect(
+            DATABASE_CONFIG['PRIMARY']['url'],
+            sslmode='require' if DATABASE_CONFIG['PRIMARY'].get('ssl_require') else 'disable'
+        )
+        conn.cursor_factory = psycopg2.extras.RealDictCursor
+        return conn
+    
+    # الرجوع لقاعدة البيانات الاحتياطية (SQLite)
+    else:
+        if current_db_type != 'sqlite':
+            logger.warning('⚠️ لا يمكن الوصول لقاعدة البيانات المركزية، استخدام SQLite المحلية')
+            current_db_type = 'sqlite'
+        
+        conn = sqlite3.connect(DATABASE_CONFIG['FALLBACK']['path'])
+        conn.row_factory = sqlite3.Row
+        return conn
 
-def init_database():
-    """تهيئة قاعدة البيانات وإنشاء الجداول"""
+def execute_query(query, params=None, fetch='all'):
+    """تنفيذ استعلام مع دعم PostgreSQL و SQLite"""
+    params = params or []
+    
     try:
         with get_db_connection() as conn:
-            cursor = conn.cursor()
-            
-            # جدول المستخدمين
-            cursor.execute('''
+            if current_db_type == 'postgresql':
+                cursor = conn.cursor()
+                cursor.execute(query, params)
+                
+                if fetch == 'one':
+                    result = cursor.fetchone()
+                    return dict(result) if result else None
+                elif fetch == 'all':
+                    results = cursor.fetchall()
+                    return [dict(row) for row in results]
+                else:
+                    conn.commit()
+                    return cursor.rowcount
+                    
+            else:  # SQLite
+                cursor = conn.cursor()
+                cursor.execute(query, params)
+                
+                if fetch == 'one':
+                    result = cursor.fetchone()
+                    return dict(result) if result else None
+                elif fetch == 'all':
+                    results = cursor.fetchall()
+                    return [dict(row) for row in results]
+                else:
+                    conn.commit()
+                    return cursor.rowcount
+                    
+    except Exception as e:
+        logger.error(f'خطأ في تنفيذ الاستعلام: {e}')
+        raise
+
+def get_sql_for_database_type():
+    """الحصول على SQL المناسب لنوع قاعدة البيانات"""
+    if current_db_type == 'postgresql':
+        return {
+            'users': '''
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(255) UNIQUE NOT NULL,
+                    password_hash TEXT,
+                    is_owner BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_by VARCHAR(255),
+                    last_login TIMESTAMP,
+                    is_active BOOLEAN DEFAULT TRUE
+                )
+            ''',
+            'scans': '''
+                CREATE TABLE IF NOT EXISTS scans (
+                    id VARCHAR(36) PRIMARY KEY,
+                    barcode TEXT NOT NULL,
+                    code_type VARCHAR(50) DEFAULT 'كود',
+                    user_id INTEGER NOT NULL,
+                    username VARCHAR(255) NOT NULL,
+                    image_data_url TEXT,
+                    scan_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    telegram_status VARCHAR(20) DEFAULT 'pending',
+                    telegram_attempts INTEGER DEFAULT 0,
+                    telegram_last_attempt TIMESTAMP,
+                    telegram_error TEXT,
+                    is_duplicate BOOLEAN DEFAULT FALSE,
+                    duplicate_count INTEGER DEFAULT 1,
+                    baghdad_time TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users (id)
+                )
+            ''',
+            'settings': '''
+                CREATE TABLE IF NOT EXISTS settings (
+                    id SERIAL PRIMARY KEY,
+                    key VARCHAR(255) UNIQUE NOT NULL,
+                    value TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_by VARCHAR(255)
+                )
+            ''',
+            'user_sessions': '''
+                CREATE TABLE IF NOT EXISTS user_sessions (
+                    id VARCHAR(36) PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    username VARCHAR(255) NOT NULL,
+                    is_owner BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP NOT NULL,
+                    is_remember_me BOOLEAN DEFAULT FALSE,
+                    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (id)
+                )
+            '''
+        }
+    else:  # SQLite
+        return {
+            'users': '''
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT UNIQUE NOT NULL,
@@ -77,10 +233,8 @@ def init_database():
                     last_login TIMESTAMP,
                     is_active BOOLEAN DEFAULT 1
                 )
-            ''')
-            
-            # جدول المسحات
-            cursor.execute('''
+            ''',
+            'scans': '''
                 CREATE TABLE IF NOT EXISTS scans (
                     id TEXT PRIMARY KEY,
                     barcode TEXT NOT NULL,
@@ -98,10 +252,8 @@ def init_database():
                     baghdad_time TEXT,
                     FOREIGN KEY (user_id) REFERENCES users (id)
                 )
-            ''')
-            
-            # جدول الإعدادات
-            cursor.execute('''
+            ''',
+            'settings': '''
                 CREATE TABLE IF NOT EXISTS settings (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     key TEXT UNIQUE NOT NULL,
@@ -109,10 +261,8 @@ def init_database():
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_by TEXT
                 )
-            ''')
-            
-            # جدول جلسات المستخدمين
-            cursor.execute('''
+            ''',
+            'user_sessions': '''
                 CREATE TABLE IF NOT EXISTS user_sessions (
                     id TEXT PRIMARY KEY,
                     user_id INTEGER NOT NULL,
@@ -124,15 +274,28 @@ def init_database():
                     last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users (id)
                 )
-            ''')
-            
-            conn.commit()
-            logger.info('✅ تم إنشاء جداول قاعدة البيانات بنجاح')
-            
-            # إنشاء المستخدم الأونر الافتراضي
-            create_default_owner()
-            create_default_settings()
-            
+            '''
+        }
+
+def init_database():
+    """تهيئة قاعدة البيانات وإنشاء الجداول"""
+    try:
+        # الحصول على SQL المناسب لنوع قاعدة البيانات
+        sql_queries = get_sql_for_database_type()
+        
+        logger.info(f'📊 إنشاء جداول قاعدة البيانات ({current_db_type})...')
+        
+        # إنشاء الجداول
+        for table_name, sql in sql_queries.items():
+            execute_query(sql, fetch='none')
+            logger.info(f'✅ تم إنشاء جدول {table_name}')
+        
+        logger.info('✅ تم إنشاء جميع جداول قاعدة البيانات بنجاح')
+        
+        # إنشاء البيانات الافتراضية
+        create_default_owner()
+        create_default_settings()
+        
     except Exception as e:
         logger.error(f'❌ خطأ في تهيئة قاعدة البيانات: {e}')
         raise
@@ -140,56 +303,70 @@ def init_database():
 def create_default_owner():
     """إنشاء المستخدم الأونر الافتراضي"""
     try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            
-            # التحقق من وجود المستخدم
-            cursor.execute('SELECT id FROM users WHERE username = ?', ('admin',))
-            if cursor.fetchone():
-                logger.info('⚠️ المستخدم الأونر موجود بالفعل')
-                return
-            
-            # إنشاء المستخدم الأونر
-            password_hash = generate_password_hash('owner123')
-            cursor.execute('''
+        # التحقق من وجود المستخدم
+        existing_user = execute_query('SELECT id FROM users WHERE username = %s', ['admin'], fetch='one')
+        if existing_user:
+            logger.info('⚠️ المستخدم الأونر موجود بالفعل')
+            return
+        
+        # إنشاء المستخدم الأونر
+        password_hash = generate_password_hash('owner123')
+        if current_db_type == 'postgresql':
+            execute_query('''
                 INSERT INTO users (username, password_hash, is_owner, created_by)
-                VALUES (?, ?, 1, 'system')
-            ''', ('admin', password_hash))
+                VALUES (%s, %s, TRUE, 'system')
+            ''', ['admin', password_hash], fetch='none')
             
             # إضافة مستخدم تجريبي
-            cursor.execute('''
+            execute_query('''
+                INSERT INTO users (username, created_by)
+                VALUES (%s, 'system')
+            ''', ['test'], fetch='none')
+        else:  # SQLite
+            execute_query('''
+                INSERT INTO users (username, password_hash, is_owner, created_by)
+                VALUES (?, ?, 1, 'system')
+            ''', ['admin', password_hash], fetch='none')
+            
+            # إضافة مستخدم تجريبي
+            execute_query('''
                 INSERT INTO users (username, created_by)
                 VALUES (?, 'system')
-            ''', ('test',))
-            
-            conn.commit()
-            logger.info('✅ تم إنشاء المستخدمين الافتراضيين: admin (أونر) و test')
-            
+            ''', ['test'], fetch='none')
+        
+        logger.info('✅ تم إنشاء المستخدمين الافتراضيين: admin (أونر) و test')
+        
     except Exception as e:
         logger.error(f'❌ خطأ في إنشاء المستخدمين الافتراضيين: {e}')
 
 def create_default_settings():
     """إنشاء الإعدادات الافتراضية"""
     try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            
-            default_settings = [
-                ('telegram_bot_token', ''),
-                ('telegram_chat_id', ''),
-                ('auto_send_telegram', 'false'),
-                ('duplicate_detection_seconds', '20')
-            ]
-            
-            for key, value in default_settings:
-                cursor.execute('''
-                    INSERT OR IGNORE INTO settings (key, value, updated_by)
-                    VALUES (?, ?, 'system')
-                ''', (key, value))
-            
-            conn.commit()
-            logger.info('✅ تم إنشاء الإعدادات الافتراضية')
-            
+        default_settings = [
+            ('telegram_bot_token', ''),
+            ('telegram_chat_id', ''),
+            ('auto_send_telegram', 'false'),
+            ('duplicate_detection_seconds', '20'),
+            ('database_type', current_db_type)
+        ]
+        
+        for key, value in default_settings:
+            # التحقق من وجود الإعداد
+            existing = execute_query('SELECT id FROM settings WHERE key = %s', [key], fetch='one')
+            if not existing:
+                if current_db_type == 'postgresql':
+                    execute_query('''
+                        INSERT INTO settings (key, value, updated_by)
+                        VALUES (%s, %s, 'system')
+                    ''', [key, value], fetch='none')
+                else:  # SQLite
+                    execute_query('''
+                        INSERT INTO settings (key, value, updated_by)
+                        VALUES (?, ?, 'system')
+                    ''', [key, value], fetch='none')
+        
+        logger.info('✅ تم إنشاء الإعدادات الافتراضية')
+        
     except Exception as e:
         logger.error(f'❌ خطأ في إنشاء الإعدادات: {e}')
 
@@ -284,15 +461,14 @@ def login():
         if not username:
             return jsonify({'success': False, 'message': 'اسم المستخدم مطلوب'}), 400
         
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT * FROM users WHERE username = ? AND is_active = 1
-            ''', (username,))
-            user = cursor.fetchone()
-            
-            if not user:
-                return jsonify({'success': False, 'message': 'المستخدم غير موجود أو غير مسجل'}), 401
+        # البحث عن المستخدم
+        param_placeholder = '%s' if current_db_type == 'postgresql' else '?'
+        user = execute_query(f'''
+            SELECT * FROM users WHERE username = {param_placeholder} AND is_active = {('TRUE' if current_db_type == 'postgresql' else '1')}
+        ''', [username], fetch='one')
+        
+        if not user:
+            return jsonify({'success': False, 'message': 'المستخدم غير موجود أو غير مسجل'}), 401
             
             actual_is_owner = is_owner
             
@@ -318,19 +494,30 @@ def login():
                 timedelta(days=30) if remember_me else timedelta(hours=24)
             )
             
-            cursor.execute('''
-                INSERT INTO user_sessions 
-                (id, user_id, username, is_owner, expires_at, is_remember_me)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (session_id, user['id'], user['username'], 
-                 actual_is_owner or user['is_owner'], expires_at, remember_me))
-            
-            # تحديث آخر تسجيل دخول
-            cursor.execute('''
-                UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?
-            ''', (user['id'],))
-            
-            conn.commit()
+            if current_db_type == 'postgresql':
+                execute_query('''
+                    INSERT INTO user_sessions 
+                    (id, user_id, username, is_owner, expires_at, is_remember_me)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                ''', [session_id, user['id'], user['username'], 
+                     actual_is_owner or user['is_owner'], expires_at, remember_me], fetch='none')
+                
+                # تحديث آخر تسجيل دخول
+                execute_query('''
+                    UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = %s
+                ''', [user['id']], fetch='none')
+            else:  # SQLite
+                execute_query('''
+                    INSERT INTO user_sessions 
+                    (id, user_id, username, is_owner, expires_at, is_remember_me)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', [session_id, user['id'], user['username'], 
+                     actual_is_owner or user['is_owner'], expires_at, remember_me], fetch='none')
+                
+                # تحديث آخر تسجيل دخول
+                execute_query('''
+                    UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?
+                ''', [user['id']], fetch='none')
             
             return jsonify({
                 'success': True,

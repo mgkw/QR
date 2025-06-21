@@ -179,7 +179,7 @@ logoutBtn.addEventListener('click', handleLogout);
     if (resetFilters) resetFilters.addEventListener('click', resetDateFilters);
     if (exportFilteredData) exportFilteredData.addEventListener('click', exportFilteredDataToJSON);
     if (exportFilteredReport) exportFilteredReport.addEventListener('click', exportDetailedReport);
-    
+
     // Debug button
     if (debugBtn) debugBtn.addEventListener('click', debugTest);
     
