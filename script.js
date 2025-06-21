@@ -648,22 +648,252 @@ function loadDuplicates() {
 }
 
 function showDuplicatesForCode(code) {
-    openDuplicatesModal();
+    showDuplicateImagesModal(code);
+}
+
+// New function to show duplicate images in a beautiful modal
+function showDuplicateImagesModal(code) {
+    const duplicates = scannedResults.filter(r => r.code === code);
     
-    // Scroll to the specific code group after modal opens
-    setTimeout(() => {
-        const duplicateGroups = document.querySelectorAll('.duplicate-group');
-        duplicateGroups.forEach(group => {
-            const codeElement = group.querySelector('.duplicate-code');
-            if (codeElement && codeElement.textContent === code) {
-                group.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                group.style.border = '2px solid #ffc107';
-                setTimeout(() => {
-                    group.style.border = '1px solid #e1e8ed';
-                }, 2000);
-            }
-        });
-    }, 100);
+    if (duplicates.length <= 1) {
+        showAlert('هذا الكود غير مكرر', 'info');
+        return;
+    }
+    
+    // Sort duplicates by timestamp (newest first)
+    duplicates.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    let duplicatesHtml = `
+        <div class="duplicate-images-header">
+            <h4>${duplicates[0].codeType && duplicates[0].codeType.includes('QR') ? '📱' : '🔢'} صور المكررات للكود</h4>
+            <div class="duplicate-code-display">${code}</div>
+            <p class="duplicate-count">عدد المرات: <span class="count-badge">${duplicates.length}</span></p>
+        </div>
+        <div class="duplicates-images-grid">
+    `;
+    
+    duplicates.forEach((result, index) => {
+        const codeIcon = result.codeType && result.codeType.includes('QR') ? '📱' : '🔢';
+        const statusClass = result.telegramStatus || 'pending';
+        
+        duplicatesHtml += `
+            <div class="duplicate-image-item telegram-${statusClass}">
+                <div class="duplicate-image-header">
+                    <span class="duplicate-number">${codeIcon} #${index + 1}</span>
+                    <span class="duplicate-type ${result.codeType && result.codeType.includes('QR') ? 'qr-badge' : 'barcode-badge'}">${result.codeType || 'كود'}</span>
+                </div>
+                <div class="duplicate-image-container" onclick="viewFullImageModal('${result.id}')">
+                    <img src="${result.image}" alt="صورة الكود ${index + 1}" class="duplicate-thumbnail">
+                    <div class="image-overlay">
+                        <i class="fas fa-expand-alt"></i>
+                        <span>عرض كامل</span>
+                    </div>
+                </div>
+                <div class="duplicate-image-info">
+                    <div class="duplicate-user">
+                        <i class="fas fa-user"></i> ${result.user}
+                    </div>
+                    <div class="duplicate-time">
+                        <i class="fas fa-clock"></i> ${formatDateTime(result.timestamp)}
+                    </div>
+                    <div class="duplicate-status">
+                        ${getTelegramStatusIndicator(result.telegramStatus, result.telegramAttempts)}
+                    </div>
+                </div>
+                <div class="duplicate-actions">
+                    <button class="btn btn-primary btn-sm" onclick="viewFullImageModal('${result.id}')">
+                        <i class="fas fa-expand"></i> عرض كامل
+                    </button>
+                    <button class="btn btn-success btn-sm" onclick="sendSingleToTelegram('${result.id}')">
+                        <i class="fab fa-telegram"></i> إرسال
+                    </button>
+                    <button class="btn btn-info btn-sm" onclick="copyCode('${result.code}')">
+                        <i class="fas fa-copy"></i> نسخ
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+    
+    duplicatesHtml += `
+        </div>
+        <div class="duplicate-images-footer">
+            <button class="btn btn-warning" onclick="retryAllDuplicates('${code}')">
+                <i class="fas fa-redo"></i> إعادة إرسال الكل
+            </button>
+            <button class="btn btn-info" onclick="exportDuplicateImages('${code}')">
+                <i class="fas fa-download"></i> تصدير البيانات
+            </button>
+        </div>
+    `;
+    
+    // Create modal
+    const modal = document.createElement('div');
+    modal.className = 'modal duplicate-images-modal';
+    modal.innerHTML = `
+        <div class="modal-content modal-content-wide">
+            <div class="modal-header">
+                <h3><i class="fas fa-images"></i> معرض الصور المكررة</h3>
+                <span class="close" onclick="this.closest('.modal').remove()">&times;</span>
+            </div>
+            <div class="modal-body">
+                ${duplicatesHtml}
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.style.display = 'block';
+    
+    // Close on background click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
+    
+    // Close on Escape key
+    document.addEventListener('keydown', function escapeHandler(e) {
+        if (e.key === 'Escape') {
+            modal.remove();
+            document.removeEventListener('keydown', escapeHandler);
+        }
+    });
+}
+
+// Function to view full size image in modal
+function viewFullImageModal(resultId) {
+    const result = scannedResults.find(r => r.id === resultId);
+    if (!result) return;
+    
+    const modal = document.createElement('div');
+    modal.className = 'modal image-viewer-modal';
+    modal.style.zIndex = '10001'; // Higher than duplicate modal
+    
+    modal.innerHTML = `
+        <div class="modal-content image-viewer-content">
+            <div class="modal-header">
+                <h3>${result.codeType && result.codeType.includes('QR') ? '📱' : '🔢'} ${result.code}</h3>
+                <span class="close" onclick="this.closest('.modal').remove()">&times;</span>
+            </div>
+            <div class="modal-body image-viewer-body">
+                <div class="full-image-container">
+                    <img src="${result.image}" alt="صورة الكود" class="full-size-image">
+                </div>
+                <div class="image-details">
+                    <div class="detail-row">
+                        <label>الكود:</label>
+                        <span class="code-value">${result.code}</span>
+                        <button class="btn btn-sm btn-secondary" onclick="copyCode('${result.code}')">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                    <div class="detail-row">
+                        <label>النوع:</label>
+                        <span class="badge ${result.codeType && result.codeType.includes('QR') ? 'qr-badge' : 'barcode-badge'}">${result.codeType || 'غير محدد'}</span>
+                    </div>
+                    <div class="detail-row">
+                        <label>المستخدم:</label>
+                        <span><i class="fas fa-user"></i> ${result.user}</span>
+                    </div>
+                    <div class="detail-row">
+                        <label>التاريخ:</label>
+                        <span><i class="fas fa-calendar"></i> ${formatDateTime(result.timestamp)}</span>
+                    </div>
+                    <div class="detail-row">
+                        <label>التليجرام:</label>
+                        ${getTelegramStatusIndicator(result.telegramStatus, result.telegramAttempts)}
+                    </div>
+                </div>
+                <div class="image-actions">
+                    <button class="btn btn-primary" onclick="sendSingleToTelegram('${result.id}')">
+                        <i class="fab fa-telegram"></i> إرسال للتليجرام
+                    </button>
+                    <button class="btn btn-info" onclick="downloadImage('${result.id}')">
+                        <i class="fas fa-download"></i> تحميل الصورة
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.style.display = 'block';
+    
+    // Close handlers
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
+    
+    document.addEventListener('keydown', function escapeHandler(e) {
+        if (e.key === 'Escape') {
+            modal.remove();
+            document.removeEventListener('keydown', escapeHandler);
+        }
+    });
+}
+
+// Helper functions for duplicate operations
+function retryAllDuplicates(code) {
+    const duplicates = scannedResults.filter(r => r.code === code && r.telegramStatus !== 'success');
+    
+    if (duplicates.length === 0) {
+        showAlert('جميع نسخ هذا الكود تم إرسالها بنجاح', 'info');
+        return;
+    }
+    
+    showAlert(`جاري إعادة إرسال ${duplicates.length} صورة...`, 'info');
+    
+    duplicates.forEach((result, index) => {
+        setTimeout(() => {
+            result.telegramAttempts = 0; // Reset attempts
+            sendToTelegram(result, true);
+        }, index * 1000); // 1 second delay between each
+    });
+}
+
+function exportDuplicateImages(code) {
+    const duplicates = scannedResults.filter(r => r.code === code);
+    
+    const exportData = {
+        code: code,
+        codeType: duplicates[0]?.codeType || 'غير محدد',
+        duplicateCount: duplicates.length,
+        scans: duplicates.map((result, index) => ({
+            scanNumber: index + 1,
+            user: result.user,
+            timestamp: result.timestamp,
+            timestampBaghdad: formatDateTimeBaghdad(result.timestamp),
+            telegramStatus: result.telegramStatus,
+            telegramAttempts: result.telegramAttempts || 0,
+            id: result.id
+        }))
+    };
+    
+    const dataStr = JSON.stringify(exportData, null, 2);
+    const dataBlob = new Blob([dataStr], {type: 'application/json'});
+    
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(dataBlob);
+    link.download = `duplicate_${code}_${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    
+    showAlert('تم تصدير بيانات المكررات بنجاح', 'success');
+}
+
+function downloadImage(resultId) {
+    const result = scannedResults.find(r => r.id === resultId);
+    if (!result) return;
+    
+    // Convert base64 to blob and download
+    const link = document.createElement('a');
+    link.href = result.image;
+    link.download = `barcode_${result.code}_${result.user}_${formatDateOnly(result.timestamp)}.jpg`;
+    link.click();
+    
+    showAlert('تم تحميل الصورة', 'success');
 }
 
 function handleExportDuplicates() {
@@ -1116,6 +1346,9 @@ function updateUI() {
         
         loginRequired.style.display = 'none';
         scannerSection.style.display = 'block';
+        
+        // Update scan buttons and flash visibility
+        updateScanButtons();
     } else {
         loginSection.style.display = 'flex';
         userInfo.style.display = 'none';
@@ -1124,6 +1357,7 @@ function updateUI() {
         usersBtn.style.display = 'none';
         settingsBtn.style.display = 'none';
         detailedStatsBtn.style.display = 'none';
+        flashToggleBtn.style.display = 'none';
     }
 }
 
@@ -1354,7 +1588,8 @@ function updateScanButtons() {
     } else {
         startScanBtn.style.display = 'inline-flex';
         stopScanBtn.style.display = 'none';
-        flashToggleBtn.style.display = 'none';
+        // Keep flash button visible for all logged in users
+        flashToggleBtn.style.display = currentUser ? 'inline-flex' : 'none';
         flashEnabled = false;
         updateFlashButton();
     }
