@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>قارئ الباركود - Barcode Scanner</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="styles.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <h1><i class="fas fa-qrcode"></i> قارئ الباركود</h1>
+            <div class="user-controls">
+                <div id="userInfo" class="user-info" style="display: none;">
+                    <span id="userName"></span>
+                    <button id="logoutBtn" class="btn btn-secondary">
+                        <i class="fas fa-sign-out-alt"></i> خروج
+                    </button>
+                </div>
+                <div id="loginSection" class="login-section">
+                    <input type="text" id="usernameInput" placeholder="اسم المستخدم" class="input-field">
+                    <input type="password" id="passwordInput" placeholder="كلمة المرور (للأونر فقط)" class="input-field" style="display: none;">
+                    <button id="loginBtn" class="btn btn-primary">
+                        <i class="fas fa-sign-in-alt"></i> دخول
+                    </button>
+                    <button id="ownerLoginBtn" class="btn btn-warning" style="display: none;">
+                        <i class="fas fa-crown"></i> دخول كأونر
+                    </button>
+                    <button id="showOwnerLogin" class="btn btn-secondary">
+                        <i class="fas fa-user-cog"></i> أونر
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="container">
+            <!-- Login Required Message -->
+            <div id="loginRequired" class="login-required">
+                <div class="card">
+                    <i class="fas fa-user-lock"></i>
+                    <h2>مطلوب تسجيل الدخول</h2>
+                    <p>يرجى تسجيل الدخول باسم المستخدم للوصول إلى قارئ الباركود</p>
+                </div>
+            </div>
+
+            <!-- Scanner Section -->
+            <div id="scannerSection" class="scanner-section" style="display: none;">
+                <div class="scanner-card">
+                    <h2><i class="fas fa-camera"></i> مسح الباركود</h2>
+                    
+                    <!-- Camera Controls -->
+                    <div class="camera-controls">
+                        <button id="startScanBtn" class="btn btn-success">
+                            <i class="fas fa-play"></i> بدء المسح
+                        </button>
+                        <button id="stopScanBtn" class="btn btn-danger" style="display: none;">
+                            <i class="fas fa-stop"></i> إيقاف المسح
+                        </button>
+                        <button id="settingsBtn" class="btn btn-warning">
+                            <i class="fas fa-cog"></i> الإعدادات
+                        </button>
+                        <button id="usersBtn" class="btn btn-info" style="display: none;">
+                            <i class="fas fa-users"></i> إدارة المستخدمين
+                        </button>
+                        <button id="detailedStatsBtn" class="btn btn-success" style="display: none;">
+                            <i class="fas fa-chart-line"></i> الإحصائيات الشاملة
+                        </button>
+                    </div>
+
+                    <!-- Camera View -->
+                    <div id="cameraContainer" class="camera-container" style="display: none;">
+                        <video id="video" autoplay playsinline></video>
+                        <canvas id="canvas" style="display: none;"></canvas>
+                        <div class="scan-line"></div>
+                    </div>
+
+                    <!-- Results -->
+                    <div id="results" class="results-section">
+                        <div class="results-header">
+                            <h3>النتائج المسحوبة:</h3>
+                            <div class="results-controls">
+                                <button id="showStatsBtn" class="btn btn-info">
+                                    <i class="fas fa-chart-bar"></i> الإحصائيات
+                                </button>
+                                <button id="showDuplicatesBtn" class="btn btn-warning">
+                                    <i class="fas fa-copy"></i> المكررات
+                                </button>
+                                <button id="clearResultsBtn" class="btn btn-danger">
+                                    <i class="fas fa-trash"></i> مسح الكل
+                                </button>
+                            </div>
+                        </div>
+                        <div id="resultsList" class="results-list"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Modal -->
+            <div id="settingsModal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3><i class="fas fa-cog"></i> إعدادات التليجرام</h3>
+                        <span class="close" id="closeSettings">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label for="botToken">توكن البوت:</label>
+                            <input type="password" id="botToken" class="input-field" placeholder="أدخل توكن البوت">
+                        </div>
+                        <div class="form-group">
+                            <label for="chatId">آيدي المجموعة:</label>
+                            <input type="text" id="chatId" class="input-field" placeholder="أدخل آيدي المجموعة">
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="autoSend"> إرسال تلقائي للتليجرام
+                            </label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="saveSettings" class="btn btn-primary">
+                            <i class="fas fa-save"></i> حفظ الإعدادات
+                        </button>
+                        <button id="testConnection" class="btn btn-info">
+                            <i class="fas fa-test-tube"></i> اختبار الاتصال
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Users Management Modal -->
+            <div id="usersModal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3><i class="fas fa-users"></i> إدارة المستخدمين</h3>
+                        <span class="close" id="closeUsers">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <!-- Add New User -->
+                        <div class="form-group">
+                            <h4><i class="fas fa-user-plus"></i> إضافة مستخدم جديد</h4>
+                            <input type="text" id="newUsername" class="input-field" placeholder="اسم المستخدم الجديد">
+                            <button id="addUser" class="btn btn-success">
+                                <i class="fas fa-plus"></i> إضافة مستخدم
+                            </button>
+                        </div>
+                        
+                        <!-- Users List -->
+                        <div class="form-group">
+                            <h4><i class="fas fa-list"></i> قائمة المستخدمين</h4>
+                            <div id="usersList" class="users-list">
+                                <!-- Users will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="exportUsers" class="btn btn-info">
+                            <i class="fas fa-download"></i> تصدير المستخدمين
+                        </button>
+                        <button id="importUsers" class="btn btn-warning">
+                            <i class="fas fa-upload"></i> استيراد مستخدمين
+                        </button>
+                        <input type="file" id="importFile" accept=".json" style="display: none;">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Statistics Modal -->
+            <div id="statsModal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3><i class="fas fa-chart-bar"></i> إحصائيات المسح</h3>
+                        <span class="close" id="closeStats">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-number" id="totalScans">0</div>
+                                <div class="stat-label">إجمالي المسحات</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number" id="uniqueCodes">0</div>
+                                <div class="stat-label">أكواد فريدة</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number" id="duplicateCodes">0</div>
+                                <div class="stat-label">أكواد مكررة</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number" id="activeUsers">0</div>
+                                <div class="stat-label">مستخدمين نشطين</div>
+                            </div>
+                        </div>
+                        
+                        <div class="stats-section">
+                            <h4><i class="fas fa-users"></i> إحصائيات المستخدمين</h4>
+                            <div id="userStats" class="user-stats"></div>
+                        </div>
+
+                        <div class="stats-section">
+                            <h4><i class="fas fa-trophy"></i> الأكواد الأكثر مسحاً</h4>
+                            <div id="topCodes" class="top-codes"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Duplicates Modal -->
+            <div id="duplicatesModal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3><i class="fas fa-copy"></i> الأكواد المكررة</h3>
+                        <span class="close" id="closeDuplicates">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <div id="duplicatesList" class="duplicates-list">
+                            <!-- Duplicates will be loaded here -->
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="exportDuplicates" class="btn btn-info">
+                            <i class="fas fa-download"></i> تصدير المكررات
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detailed Statistics Modal -->
+            <div id="detailedStatsModal" class="modal" style="display: none;">
+                <div class="modal-content detailed-stats-modal">
+                    <div class="modal-header">
+                        <h3><i class="fas fa-chart-line"></i> الإحصائيات الشاملة</h3>
+                        <span class="close" id="closeDetailedStats">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <!-- Date Filters -->
+                        <div class="filters-section">
+                            <h4><i class="fas fa-filter"></i> فلاتر البحث</h4>
+                            <div class="date-filters">
+                                <div class="filter-group">
+                                    <label for="startDate">من تاريخ:</label>
+                                    <input type="date" id="startDate" class="input-field">
+                                </div>
+                                <div class="filter-group">
+                                    <label for="endDate">إلى تاريخ:</label>
+                                    <input type="date" id="endDate" class="input-field">
+                                </div>
+                                <div class="filter-group">
+                                    <label for="userFilter">المستخدم:</label>
+                                    <select id="userFilter" class="input-field">
+                                        <option value="">جميع المستخدمين</option>
+                                    </select>
+                                </div>
+                                <div class="filter-actions">
+                                    <button id="applyFilters" class="btn btn-primary">
+                                        <i class="fas fa-search"></i> تطبيق الفلاتر
+                                    </button>
+                                    <button id="resetFilters" class="btn btn-secondary">
+                                        <i class="fas fa-refresh"></i> إعادة تعيين
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Summary Cards -->
+                        <div class="summary-section">
+                            <h4><i class="fas fa-chart-bar"></i> ملخص الفترة المحددة</h4>
+                            <div class="summary-grid">
+                                <div class="summary-card">
+                                    <div class="summary-number" id="filteredTotalScans">0</div>
+                                    <div class="summary-label">إجمالي المسحات</div>
+                                </div>
+                                <div class="summary-card">
+                                    <div class="summary-number" id="filteredUniqueCodes">0</div>
+                                    <div class="summary-label">أكواد فريدة</div>
+                                </div>
+                                <div class="summary-card">
+                                    <div class="summary-number" id="filteredDuplicates">0</div>
+                                    <div class="summary-label">مكررات</div>
+                                </div>
+                                <div class="summary-card">
+                                    <div class="summary-number" id="filteredActiveUsers">0</div>
+                                    <div class="summary-label">مستخدمين نشطين</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Detailed Table -->
+                        <div class="table-section">
+                            <div class="table-header">
+                                <h4><i class="fas fa-table"></i> التفاصيل الكاملة</h4>
+                                <div class="table-controls">
+                                    <button id="exportFilteredData" class="btn btn-info">
+                                        <i class="fas fa-download"></i> تصدير البيانات
+                                    </button>
+                                    <button id="exportFilteredReport" class="btn btn-success">
+                                        <i class="fas fa-file-excel"></i> تقرير مفصل
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="table-container">
+                                <table id="detailedTable" class="detailed-table">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>الباركود</th>
+                                            <th>المستخدم</th>
+                                            <th>التاريخ والوقت (بغداد)</th>
+                                            <th>حالة التكرار</th>
+                                            <th>الإجراءات</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="detailedTableBody">
+                                        <!-- Data will be populated here -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- User Activity Chart -->
+                        <div class="chart-section">
+                            <h4><i class="fas fa-chart-pie"></i> نشاط المستخدمين</h4>
+                            <div id="userActivityChart" class="chart-container">
+                                <!-- Chart will be generated here -->
+                            </div>
+                        </div>
+
+                        <!-- Hourly Activity Chart -->
+                        <div class="chart-section">
+                            <h4><i class="fas fa-clock"></i> النشاط حسب الساعة (بتوقيت بغداد)</h4>
+                            <div id="hourlyActivityChart" class="chart-container">
+                                <!-- Chart will be generated here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>جاري المعالجة...</p>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html> 
