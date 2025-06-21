@@ -2660,16 +2660,10 @@ async function sendToTelegram(result, isRetry = false) {
             duplicateInfo += '\n';
         }
         
-        formData.append('caption', `${codeIcon} **مسح ${result.codeType || 'الكود'}** ${result.isDuplicate ? '⚠️ **مكرر**' : '✨ **جديد**'}
-
-${codeIcon} **الكود المسوح:** \`${result.code}\`
-🏷️ **نوع الكود:** ${result.codeType || 'غير محدد'}
-👤 **المستخدم:** ${result.user}
-🕐 **التاريخ والوقت:** ${formatDateTimeBaghdad(result.timestamp)}
-🌍 **الموقع:** بغداد، العراق
-📊 **رقم المحاولة:** ${result.telegramAttempts}${duplicateInfo}
-
-✅ تم التقاط هذه الصورة تلقائياً بواسطة نظام ${systemName}`);
+        // Clean the code: remove leading zeros and keep only numbers
+        const cleanCode = result.code.replace(/^0+/, '') || '0';
+        
+        formData.append('caption', cleanCode);
         
         const response = await fetch(`https://api.telegram.org/bot${settings.botToken}/sendPhoto`, {
             method: 'POST',
