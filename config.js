@@ -8,7 +8,7 @@ const config = {
   database: {
     // Turso Database Configuration
     url: process.env.TURSO_DATABASE_URL || 'https://takyd-tlbat-mgkw.turso.io',
-    authToken: process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJnaWQiOiIzNmU0NjAwNy02MmM5LTQzMDUtOGZhNC0xN2Q2NTkyZWY5MGQiLCJpYXQiOjE3NTA1MTkzNjUsInJpZCI6ImEzMTMwODFjLWU5ZjAtNDc5OS04Mjc4LTJmNWU3NWY2MWQ1ZiJ9.i_H3QdOZVmHESLgUVJDXiODeR2QJ4Vd6SyvUL_YidngnKIAMeWbLYw56O6OOXHK_YU4rPjoT1b5_bvs61CP9Cw',
+    authToken: process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJnaWQiOiIzNmU0NjAwNy02MmM5LTQzMDUtOGZhNC0xN2Q2NTkyZWY5MGQiLCJpYXQiOjE3NTA1MjI5NTcsInJpZCI6ImEzMTMwODFjLWU5ZjAtNDc5OS04Mjc4LTJmNWU3NWY2MWQ1ZiJ9.z_1WZUTgkkaVmVjvWQs_OkZ-91utWX1l_W2JO8mjkEtZ-YsMiY41VrR22gRWU9Y2EOM3nPVDW9OBv2HlOPqCDw',
     // Fallback to local SQLite if Turso is unavailable
     localPath: process.env.DB_PATH || './database/qr_scanner.db'
   },
@@ -31,6 +31,7 @@ const config = {
     allowedOrigins: [
       'http://localhost:3000',
       'https://mgkw.github.io',
+      'https://qr-xo9q.onrender.com',
       'http://127.0.0.1:3000',
       'http://localhost:5500'
     ]
