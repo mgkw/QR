@@ -237,6 +237,36 @@ body {
     flex-wrap: wrap;
 }
 
+/* Flash Button Styling */
+#flashToggleBtn {
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+#flashToggleBtn.btn-warning {
+    background: linear-gradient(135deg, #ffc107, #ff9500);
+    color: white;
+    box-shadow: 0 4px 15px rgba(255, 193, 7, 0.4);
+    animation: flashPulse 2s infinite;
+}
+
+#flashToggleBtn.btn-secondary {
+    background: linear-gradient(135deg, #6c757d, #495057);
+    color: white;
+}
+
+@keyframes flashPulse {
+    0%, 100% { 
+        box-shadow: 0 4px 15px rgba(255, 193, 7, 0.4);
+        transform: scale(1);
+    }
+    50% { 
+        box-shadow: 0 6px 20px rgba(255, 193, 7, 0.6);
+        transform: scale(1.05);
+    }
+}
+
 /* Camera Container */
 .camera-container {
     position: relative;

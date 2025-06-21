@@ -3,6 +3,7 @@ let currentUser = null;
 let isOwner = false;
 let isScanning = false;
 let stream = null;
+let flashEnabled = false;
 let lastScannedCode = null;
 let lastScannedTime = 0;
 let scannedResults = [];
@@ -27,6 +28,7 @@ const loginRequired = document.getElementById('loginRequired');
 const scannerSection = document.getElementById('scannerSection');
 const startScanBtn = document.getElementById('startScanBtn');
 const stopScanBtn = document.getElementById('stopScanBtn');
+const flashToggleBtn = document.getElementById('flashToggleBtn');
 const settingsBtn = document.getElementById('settingsBtn');
 const usersBtn = document.getElementById('usersBtn');
 
@@ -54,7 +56,6 @@ const importFile = document.getElementById('importFile');
 
 const showStatsBtn = document.getElementById('showStatsBtn');
 const showDuplicatesBtn = document.getElementById('showDuplicatesBtn');
-const clearResultsBtn = document.getElementById('clearResultsBtn');
 const detailedStatsBtn = document.getElementById('detailedStatsBtn');
 
 const statsModal = document.getElementById('statsModal');
@@ -83,6 +84,7 @@ showOwnerLogin.addEventListener('click', toggleOwnerLogin);
 logoutBtn.addEventListener('click', handleLogout);
 startScanBtn.addEventListener('click', startScanning);
 stopScanBtn.addEventListener('click', stopScanning);
+flashToggleBtn.addEventListener('click', toggleFlash);
 settingsBtn.addEventListener('click', openSettings);
 usersBtn.addEventListener('click', openUsersModal);
 closeSettings.addEventListener('click', closeSettingsModal);
@@ -95,7 +97,6 @@ importUsers.addEventListener('click', () => importFile.click());
 importFile.addEventListener('change', handleImportUsers);
 showStatsBtn.addEventListener('click', openStatsModal);
 showDuplicatesBtn.addEventListener('click', openDuplicatesModal);
-clearResultsBtn.addEventListener('click', clearAllResults);
 detailedStatsBtn.addEventListener('click', openDetailedStatsModal);
 closeStats.addEventListener('click', closeStatsModal);
 closeDuplicates.addEventListener('click', closeDuplicatesModal);
@@ -1135,122 +1136,189 @@ async function startScanning() {
 
     try {
         showLoading(true);
+        console.log('Starting camera...');
         
-        // Request camera permission
-        stream = await navigator.mediaDevices.getUserMedia({
+        // Enhanced camera constraints with fallback
+        const constraints = {
             video: {
-                facingMode: 'environment',
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
+                facingMode: { ideal: 'environment' },
+                width: { ideal: 1280, min: 640 },
+                height: { ideal: 720, min: 480 },
+                frameRate: { ideal: 30, min: 15 }
             }
-        });
+        };
+
+        // Request camera permission with fallback
+        try {
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (primaryError) {
+            console.warn('Primary camera constraints failed, trying fallback:', primaryError);
+            // Fallback to basic constraints
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: true
+            });
+        }
 
         video.srcObject = stream;
         cameraContainer.style.display = 'block';
         
-        // Wait for video to load
-        await new Promise((resolve) => {
-            video.onloadedmetadata = resolve;
+        console.log('Camera stream acquired, waiting for video to load...');
+        
+        // Wait for video to load with timeout
+        await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('Video load timeout'));
+            }, 10000); // 10 second timeout
+            
+            video.onloadedmetadata = () => {
+                clearTimeout(timeout);
+                console.log(`Video loaded: ${video.videoWidth}x${video.videoHeight}`);
+                resolve();
+            };
+            
+            video.onerror = () => {
+                clearTimeout(timeout);
+                reject(new Error('Video load error'));
+            };
         });
 
+        // Wait a bit more for video to fully initialize
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        console.log('Initializing dual scanning system...');
         // Initialize dual scanning system
         await initializeDualScanning();
         
         isScanning = true;
         updateScanButtons();
         showLoading(false);
-        showAlert('تم بدء المسح المتطور (QR + باركود)', 'success');
+        showAlert('تم بدء المسح المتطور (QR + باركود) ✓', 'success');
 
     } catch (error) {
-        console.error('Camera access error:', error);
-        showAlert('خطأ في الوصول للكاميرا. تأكد من منح الإذن.', 'error');
+        console.error('Camera/scanning initialization error:', error);
+        showAlert('خطأ في بدء المسح. تأكد من منح إذن الكاميرا وإعادة المحاولة.', 'error');
         showLoading(false);
+        
+        // Cleanup on error
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            stream = null;
+        }
+        cameraContainer.style.display = 'none';
     }
 }
 
 // Initialize dual scanning system (jsQR + QuaggaJS)
 async function initializeDualScanning() {
     return new Promise((resolve, reject) => {
-        // Initialize Quagga for traditional barcodes
+        // Initialize Quagga for traditional barcodes with enhanced settings
         Quagga.init({
             inputStream: {
                 name: "Live",
                 type: "LiveStream",
                 target: video,
                 constraints: {
-                    width: 1280,
-                    height: 720,
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
                     facingMode: "environment"
                 }
             },
+            locator: {
+                patchSize: "medium",
+                halfSample: true
+            },
+            numOfWorkers: 2,
+            frequency: 10,
             decoder: {
                 readers: [
                     "code_128_reader",
                     "ean_reader",
-                    "ean_8_reader",
+                    "ean_8_reader", 
                     "code_39_reader",
+                    "code_39_vin_reader",
                     "codabar_reader",
                     "upc_reader",
-                    "upc_e_reader"
+                    "upc_e_reader",
+                    "i2of5_reader",
+                    "2of5_reader",
+                    "code_93_reader"
                 ]
-            }
+            },
+            locate: true
         }, (err) => {
             if (err) {
                 console.error('Quagga initialization error:', err);
-                reject(err);
+                showAlert('خطأ في تهيئة قارئ الباركود التقليدي', 'warning');
+                // Continue with QR only
+                startQRScanning();
+                resolve();
                 return;
             }
+            
+            console.log('Quagga initialized successfully');
             
             // Start Quagga for traditional barcodes
             Quagga.start();
             
             // Handle traditional barcode detection
             Quagga.onDetected((result) => {
-                handleCodeDetection(result.codeResult.code, 'باركود');
+                if (result && result.codeResult && result.codeResult.code) {
+                    console.log('Barcode detected:', result.codeResult.code);
+                    handleCodeDetection(result.codeResult.code, 'باركود');
+                }
             });
             
-            // Start QR Code scanning loop
-            startQRScanning();
-            
-            resolve();
+            // Start QR Code scanning loop after a short delay
+            setTimeout(() => {
+                startQRScanning();
+                resolve();
+            }, 500);
         });
     });
 }
 
 // QR Code scanning using jsQR
 function startQRScanning() {
+    console.log('Starting QR Code scanning...');
+    
     const qrScanInterval = setInterval(() => {
         if (!isScanning) {
             clearInterval(qrScanInterval);
+            console.log('QR scanning stopped');
             return;
         }
         
-        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        if (video.readyState >= video.HAVE_CURRENT_DATA && video.videoWidth > 0 && video.videoHeight > 0) {
             scanForQRCode();
         }
-    }, 250); // Scan every 250ms for QR codes
+    }, 200); // Scan every 200ms for QR codes - faster scanning
 }
 
 function scanForQRCode() {
-    // Create a temporary canvas for QR scanning
-    const qrCanvas = document.createElement('canvas');
-    const qrContext = qrCanvas.getContext('2d');
-    
-    qrCanvas.width = video.videoWidth;
-    qrCanvas.height = video.videoHeight;
-    
-    qrContext.drawImage(video, 0, 0, qrCanvas.width, qrCanvas.height);
-    
-    // Get image data for jsQR
-    const imageData = qrContext.getImageData(0, 0, qrCanvas.width, qrCanvas.height);
-    
     try {
-        // Scan for QR code
+        // Create a temporary canvas for QR scanning
+        const qrCanvas = document.createElement('canvas');
+        const qrContext = qrCanvas.getContext('2d');
+        
+        qrCanvas.width = video.videoWidth;
+        qrCanvas.height = video.videoHeight;
+        
+        if (qrCanvas.width === 0 || qrCanvas.height === 0) {
+            return; // Skip if video not ready
+        }
+        
+        qrContext.drawImage(video, 0, 0, qrCanvas.width, qrCanvas.height);
+        
+        // Get image data for jsQR
+        const imageData = qrContext.getImageData(0, 0, qrCanvas.width, qrCanvas.height);
+        
+        // Scan for QR code with multiple attempts
         const qrCode = jsQR(imageData.data, imageData.width, imageData.height, {
-            inversionAttempts: "dontInvert"
+            inversionAttempts: "attemptBoth"
         });
         
-        if (qrCode) {
+        if (qrCode && qrCode.data) {
+            console.log('QR Code detected:', qrCode.data);
             handleCodeDetection(qrCode.data, 'QR كود');
         }
     } catch (error) {
@@ -1282,9 +1350,53 @@ function updateScanButtons() {
     if (isScanning) {
         startScanBtn.style.display = 'none';
         stopScanBtn.style.display = 'inline-flex';
+        flashToggleBtn.style.display = 'inline-flex';
     } else {
         startScanBtn.style.display = 'inline-flex';
         stopScanBtn.style.display = 'none';
+        flashToggleBtn.style.display = 'none';
+        flashEnabled = false;
+        updateFlashButton();
+    }
+}
+
+// Flash Control Functions
+async function toggleFlash() {
+    if (!stream) {
+        showAlert('يجب بدء المسح أولاً', 'error');
+        return;
+    }
+
+    try {
+        const track = stream.getVideoTracks()[0];
+        const capabilities = track.getCapabilities();
+        
+        if (!capabilities.torch) {
+            showAlert('هذا الجهاز لا يدعم الفلاش', 'error');
+            return;
+        }
+        
+        flashEnabled = !flashEnabled;
+        await track.applyConstraints({
+            advanced: [{ torch: flashEnabled }]
+        });
+        
+        updateFlashButton();
+        showAlert(flashEnabled ? 'تم تشغيل الفلاش' : 'تم إطفاء الفلاش', 'success');
+        
+    } catch (error) {
+        console.error('Flash toggle error:', error);
+        showAlert('خطأ في تشغيل الفلاش', 'error');
+    }
+}
+
+function updateFlashButton() {
+    if (flashEnabled) {
+        flashToggleBtn.innerHTML = '<i class="fas fa-lightbulb"></i> إطفاء الفلاش';
+        flashToggleBtn.className = 'btn btn-warning';
+    } else {
+        flashToggleBtn.innerHTML = '<i class="fas fa-lightbulb"></i> فلاش';
+        flashToggleBtn.className = 'btn btn-secondary';
     }
 }
 
@@ -1772,14 +1884,7 @@ function updateDuplicateIndicators(code) {
     });
 }
 
-function clearAllResults() {
-    if (confirm('هل أنت متأكد من حذف جميع النتائج؟ هذا الإجراء لا يمكن التراجع عنه.')) {
-        scannedResults = [];
-        saveResults();
-        resultsList.innerHTML = '';
-        showAlert('تم حذف جميع النتائج', 'success');
-    }
-}
+// Function clearAllResults removed as per user request
 
 // Settings Management
 function openSettings() {
