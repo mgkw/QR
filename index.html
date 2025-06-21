@@ -1,557 +1,0 @@
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🌍 قارئ الباركود العالمي</title>
-    <meta name="description" content="نظام قارئ الباركود المركزي - الوصول من أي مكان في العالم">
-    <meta name="keywords" content="barcode, QR code, scanner, قارئ الباركود, مسح الكود">
-    
-    <!-- PWA Support -->
-    <meta name="theme-color" content="#667eea">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="قارئ الباركود العالمي">
-    
-    <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📱</text></svg>">
-    
-    <!-- CSS Libraries -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css">
-    
-    <style>
-        /* إضافات خاصة للنظام العالمي */
-        .global-indicator {
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            background: linear-gradient(45deg, #00c851, #00ff4d);
-            color: white;
-            padding: 8px 15px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            z-index: 1000;
-            animation: pulse 2s infinite;
-        }
-        
-        .server-status {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 8px 15px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            z-index: 1000;
-            color: white;
-        }
-        
-        .status-connected {
-            background: linear-gradient(45deg, #00c851, #00ff4d);
-            animation: pulse 2s infinite;
-        }
-        
-        .status-local {
-            background: linear-gradient(45deg, #ff9500, #ffad33);
-        }
-        
-        .status-error {
-            background: linear-gradient(45deg, #ff4444, #ff6666);
-        }
-        
-        .welcome-banner {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            margin-bottom: 20px;
-            border-radius: 15px;
-            text-align: center;
-        }
-        
-        .sync-indicator {
-            display: inline-block;
-            margin-left: 10px;
-            animation: spin 2s linear infinite;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-            100% { transform: scale(1); }
-        }
-        
-        .device-info {
-            position: fixed;
-            bottom: 20px;
-            left: 20px;
-            background: rgba(0,0,0,0.7);
-            color: white;
-            padding: 10px;
-            border-radius: 10px;
-            font-size: 0.8rem;
-            opacity: 0.8;
-        }
-        
-        .global-features {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px;
-            margin: 20px 0;
-        }
-        
-        .feature-card {
-            background: rgba(255,255,255,0.1);
-            padding: 20px;
-            border-radius: 10px;
-            text-align: center;
-            backdrop-filter: blur(10px);
-        }
-        
-        .feature-card i {
-            font-size: 2rem;
-            margin-bottom: 10px;
-            color: #ffd43b;
-        }
-    </style>
-</head>
-
-<body>
-    <!-- مؤشرات النظام العالمي -->
-    <div class="global-indicator">
-        <i class="fas fa-globe"></i> نظام عالمي
-    </div>
-    
-    <div id="serverStatus" class="server-status status-connected">
-        <i class="fas fa-server"></i> <span id="statusText">متصل</span>
-    </div>
-    
-    <div class="device-info" id="deviceInfo">
-        <i class="fas fa-mobile-alt"></i> <span id="deviceType">Unknown</span> | 
-        <i class="fas fa-wifi"></i> <span id="connectionType">Online</span>
-                </div>
-
-    <div class="container">
-        <!-- رسالة الترحيب -->
-        <div class="welcome-banner animate__animated animate__fadeInDown">
-            <h2>
-                <i class="fas fa-qrcode"></i> 
-                مرحباً بك في قارئ الباركود العالمي
-                <i class="fas fa-sync sync-indicator" id="syncIndicator" style="display: none;"></i>
-            </h2>
-            <p>يمكنك الآن الوصول لبياناتك من أي مكان في العالم 🌍</p>
-                        </div>
-                        
-        <!-- المميزات العالمية -->
-        <div class="global-features">
-            <div class="feature-card">
-                <i class="fas fa-cloud"></i>
-                <h4>تزامن سحابي</h4>
-                <p>بياناتك محفوظة ومتزامنة عالمياً</p>
-                        </div>
-            <div class="feature-card">
-                <i class="fas fa-mobile-alt"></i>
-                <h4>متوافق مع الجوال</h4>
-                <p>يعمل على جميع الأجهزة والمنصات</p>
-                    </div>
-            <div class="feature-card">
-                <i class="fas fa-shield-alt"></i>
-                <h4>حماية متقدمة</h4>
-                <p>نظام مصادقة آمن ومشفر</p>
-                </div>
-            <div class="feature-card">
-                <i class="fas fa-bolt"></i>
-                <h4>سرعة فائقة</h4>
-                <p>معالجة فورية ونتائج سريعة</p>
-            </div>
-        </div>
-
-        <!-- واجهة تسجيل الدخول -->
-        <div id="loginSection" class="card animate__animated animate__fadeInUp">
-            <div class="card-header">
-                <h2><i class="fas fa-sign-in-alt"></i> تسجيل الدخول</h2>
-                <p>ادخل إلى النظام العالمي لقراءة الباركود</p>
-            </div>
-
-            <form id="loginForm" class="card-body" autocomplete="on">
-                <div class="form-group">
-                    <label for="username">
-                        <i class="fas fa-user"></i> اسم المستخدم
-                    </label>
-                    <input type="text" 
-                           id="username" 
-                           name="username"
-                           required 
-                           placeholder="ادخل اسم المستخدم"
-                           autocomplete="username"
-                           class="form-control">
-                </div>
-                
-                <div class="form-group">
-                    <label for="password">
-                        <i class="fas fa-lock"></i> كلمة المرور
-                    </label>
-                    <input type="password" 
-                           id="password" 
-                           name="password"
-                           placeholder="ادخل كلمة المرور (اختياري)"
-                           autocomplete="current-password"
-                           class="form-control">
-                    </div>
-
-                <div class="form-group">
-                    <label class="checkbox-container">
-                        <input type="checkbox" id="rememberMe" name="rememberMe">
-                        <span class="checkmark"></span>
-                        تذكرني لمدة 30 يوماً
-                    </label>
-                    </div>
-
-                <button type="submit" class="btn btn-primary btn-block">
-                    <i class="fas fa-sign-in-alt"></i> دخول
-                </button>
-            </form>
-            
-            <div class="card-footer">
-                <p><strong>حسابات تجريبية:</strong></p>
-                <div class="demo-accounts">
-                    <button class="btn btn-outline" onclick="quickLogin('admin', 'owner123')">
-                        <i class="fas fa-crown"></i> admin (مدير)
-                                </button>
-                    <button class="btn btn-outline" onclick="quickLogin('test', '')">
-                        <i class="fas fa-user"></i> test (عادي)
-                                </button>
-                </div>
-            </div>
-                    </div>
-
-        <!-- واجهة الماسح الضوئي -->
-        <div id="scannerSection" class="card" style="display: none;">
-            <div class="card-header">
-                <div class="user-info">
-                    <div class="user-details">
-                        <span id="currentUser" class="username"></span>
-                        <span id="userBadge" class="user-badge"></span>
-                        <div class="connection-status">
-                            <i class="fas fa-circle" id="connectionDot"></i>
-                            <span id="connectionStatus">متصل بالخادم العالمي</span>
-                        </div>
-                    </div>
-                    <div class="header-actions">
-                        <button id="refreshBtn" class="btn btn-icon" title="تحديث">
-                            <i class="fas fa-sync-alt"></i>
-                        </button>
-                        <button id="settingsBtn" class="btn btn-icon" title="الإعدادات">
-                            <i class="fas fa-cog"></i>
-                        </button>
-                        <button id="logoutBtn" class="btn btn-icon btn-danger" title="تسجيل الخروج">
-                            <i class="fas fa-sign-out-alt"></i>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card-body">
-                <!-- إحصائيات سريعة -->
-                <div class="stats-row" id="quickStats">
-                    <div class="stat-item">
-                        <span class="stat-number" id="totalScansCount">0</span>
-                        <span class="stat-label">إجمالي المسحات</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-number" id="todayScansCount">0</span>
-                        <span class="stat-label">اليوم</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-number" id="activeUsersCount">0</span>
-                        <span class="stat-label">المستخدمين النشطين</span>
-                    </div>
-                </div>
-
-                <!-- أزرار الكاميرا -->
-                <div class="camera-controls">
-                    <button id="startCameraBtn" class="btn btn-success btn-block">
-                        <i class="fas fa-camera"></i> تشغيل الكاميرا
-                    </button>
-                    <button id="stopCameraBtn" class="btn btn-danger btn-block" style="display: none;">
-                        <i class="fas fa-stop"></i> إيقاف الكاميرا
-                            </button>
-                        </div>
-                        
-                <!-- منطقة المعاينة -->
-                <div id="previewContainer" class="preview-container" style="display: none;">
-                    <video id="preview" class="video-preview" autoplay muted playsinline></video>
-                    <canvas id="canvas" class="scan-canvas"></canvas>
-                    <div class="scan-overlay">
-                        <div class="scan-frame"></div>
-                        <div class="scan-line"></div>
-                    </div>
-                    <div class="scan-status" id="scanStatus">
-                        <i class="fas fa-search"></i> جاري البحث عن باركود...
-                    </div>
-                </div>
-
-                <!-- رفع الصور -->
-                <div class="upload-section">
-                    <input type="file" id="imageUpload" accept="image/*" capture="environment" style="display: none;">
-                    <button id="uploadBtn" class="btn btn-outline btn-block">
-                        <i class="fas fa-upload"></i> رفع صورة
-                    </button>
-            </div>
-
-                <!-- نتائج المسح -->
-                <div id="scanResults" class="scan-results" style="display: none;">
-                    <h3><i class="fas fa-check-circle"></i> نتيجة المسح</h3>
-                    <div class="result-content">
-                        <div class="result-image">
-                            <img id="resultImage" alt="صورة الباركود">
-                    </div>
-                        <div class="result-details">
-                            <div class="barcode-info">
-                                <label>الباركود:</label>
-                                <div class="barcode-value" id="barcodeValue"></div>
-                                <button class="btn btn-icon copy-btn" onclick="copyBarcode()" title="نسخ">
-                                    <i class="fas fa-copy"></i>
-                                </button>
-                            </div>
-                            <div class="scan-info">
-                                <small>
-                                    <i class="fas fa-clock"></i> <span id="scanTime"></span> |
-                                    <i class="fas fa-user"></i> <span id="scanUser"></span> |
-                                    <i class="fas fa-server"></i> محفوظ في الخادم العالمي
-                                </small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-                    </div>
-
-        <!-- إدارة المسحات -->
-        <div id="scansSection" class="card" style="display: none;">
-            <div class="card-header">
-                <h3><i class="fas fa-list"></i> إدارة المسحات</h3>
-                <div class="header-actions">
-                    <button id="exportBtn" class="btn btn-outline">
-                        <i class="fas fa-download"></i> تصدير
-                    </button>
-                    <button id="refreshScansBtn" class="btn btn-outline">
-                        <i class="fas fa-sync-alt"></i> تحديث
-                        </button>
-                </div>
-            </div>
-
-            <div class="card-body">
-                <!-- فلاتر البحث -->
-                <div class="filters-section">
-                    <div class="filter-group">
-                        <input type="text" id="searchFilter" placeholder="بحث في الباركود..." class="form-control">
-                    </div>
-                                <div class="filter-group">
-                        <select id="userFilter" class="form-control">
-                                        <option value="">جميع المستخدمين</option>
-                                    </select>
-                                </div>
-                    <div class="filter-group">
-                        <input type="date" id="dateFilter" class="form-control">
-                            </div>
-                        </div>
-
-                <!-- قائمة المسحات -->
-                <div id="scansList" class="scans-list">
-                    <div class="loading-message">
-                        <i class="fas fa-spinner fa-spin"></i> جاري تحميل المسحات من الخادم العالمي...
-                                </div>
-                                </div>
-                            </div>
-                        </div>
-
-        <!-- الإعدادات -->
-        <div id="settingsSection" class="card" style="display: none;">
-            <div class="card-header">
-                <h3><i class="fas fa-cog"></i> الإعدادات</h3>
-                                </div>
-            
-            <div class="card-body">
-                <!-- إعدادات النظام -->
-                <div class="settings-group">
-                    <h4><i class="fas fa-server"></i> معلومات الخادم</h4>
-                    <div class="server-info" id="serverInfo">
-                        <div class="info-item">
-                            <label>نوع قاعدة البيانات:</label>
-                            <span id="dbType">غير محدد</span>
-                        </div>
-                        <div class="info-item">
-                            <label>اسم قاعدة البيانات:</label>
-                            <span id="dbName">غير محدد</span>
-                        </div>
-                        <div class="info-item">
-                            <label>حالة الاتصال:</label>
-                            <span id="dbStatus">غير محدد</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- إعدادات التليجرام -->
-                <div class="settings-group" id="telegramSettings" style="display: none;">
-                    <h4><i class="fab fa-telegram"></i> إعدادات التليجرام</h4>
-                    <div class="form-group">
-                        <label>رمز البوت:</label>
-                        <input type="text" id="telegramToken" class="form-control" placeholder="Bot Token">
-                    </div>
-                    <div class="form-group">
-                        <label>معرف المحادثة:</label>
-                        <input type="text" id="telegramChat" class="form-control" placeholder="Chat ID">
-                    </div>
-                    <div class="form-group">
-                        <label class="checkbox-container">
-                            <input type="checkbox" id="autoSendTelegram">
-                            <span class="checkmark"></span>
-                            إرسال تلقائي للتليجرام
-                        </label>
-                    </div>
-                    <button id="saveSettingsBtn" class="btn btn-primary">
-                        <i class="fas fa-save"></i> حفظ الإعدادات
-                    </button>
-                </div>
-
-                <!-- إدارة المستخدمين -->
-                <div id="userManagement" class="settings-group" style="display: none;">
-                    <h4><i class="fas fa-users"></i> إدارة المستخدمين</h4>
-                    <div class="users-list" id="usersList">
-                        <!-- سيتم ملؤها ديناميكياً -->
-                    </div>
-                    <button id="addUserBtn" class="btn btn-success">
-                        <i class="fas fa-plus"></i> إضافة مستخدم
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- التنقل السفلي -->
-        <div class="bottom-nav">
-            <button class="nav-item active" data-section="scanner">
-                <i class="fas fa-qrcode"></i>
-                <span>المسح</span>
-            </button>
-            <button class="nav-item" data-section="scans">
-                <i class="fas fa-list"></i>
-                <span>المسحات</span>
-            </button>
-            <button class="nav-item" data-section="settings">
-                <i class="fas fa-cog"></i>
-                <span>الإعدادات</span>
-            </button>
-        </div>
-    </div>
-
-    <!-- الرسائل المنبثقة -->
-    <div id="toast" class="toast"></div>
-    
-    <!-- مودال التأكيد -->
-    <div id="confirmModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 id="confirmTitle">تأكيد</h3>
-                <button class="modal-close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <p id="confirmMessage">هل أنت متأكد؟</p>
-            </div>
-            <div class="modal-footer">
-                <button id="confirmCancel" class="btn btn-outline">إلغاء</button>
-                <button id="confirmOk" class="btn btn-danger">تأكيد</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- JavaScript Libraries -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-cookie/3.0.5/js.cookie.min.js"></script>
-    <script src="library-loader.js"></script>
-    <script src="script.js"></script>
-    
-    <script>
-        // إعدادات خاصة بالنظام العالمي
-        window.GLOBAL_CONFIG = {
-            isGlobalSystem: true,
-            apiBaseUrl: window.location.origin + '/api',
-            wsBaseUrl: window.location.origin.replace('http', 'ws'),
-            syncInterval: 30000, // 30 ثانية
-            autoSync: true,
-            showDeviceInfo: true
-        };
-
-        // إظهار معلومات الجهاز
-        document.addEventListener('DOMContentLoaded', function() {
-            updateDeviceInfo();
-            startGlobalSync();
-        });
-
-        function updateDeviceInfo() {
-            const deviceInfo = document.getElementById('deviceInfo');
-            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-            const deviceType = isMobile ? 'هاتف ذكي' : 'كمبيوتر';
-            const isOnline = navigator.onLine ? 'متصل' : 'غير متصل';
-            
-            deviceInfo.innerHTML = `
-                <i class="fas fa-${isMobile ? 'mobile-alt' : 'desktop'}"></i> ${deviceType} | 
-                <i class="fas fa-${navigator.onLine ? 'wifi' : 'unlink'}"></i> ${isOnline}
-            `;
-        }
-
-        function startGlobalSync() {
-            if (!window.GLOBAL_CONFIG.autoSync) return;
-
-            setInterval(async () => {
-                try {
-                    const response = await fetch('/status');
-                    const data = await response.json();
-                    updateServerStatus(data);
-                } catch (error) {
-                    console.error('خطأ في المزامنة:', error);
-                    updateServerStatus({ success: false });
-                }
-            }, window.GLOBAL_CONFIG.syncInterval);
-        }
-
-        function updateServerStatus(data) {
-            const statusElement = document.getElementById('serverStatus');
-            const statusText = document.getElementById('statusText');
-            const syncIndicator = document.getElementById('syncIndicator');
-            
-            if (data.success || data.database) {
-                statusElement.className = 'server-status status-connected';
-                statusText.textContent = 'متصل';
-                syncIndicator.style.display = 'inline-block';
-                setTimeout(() => syncIndicator.style.display = 'none', 1000);
-            } else {
-                statusElement.className = 'server-status status-error';
-                statusText.textContent = 'خطأ في الاتصال';
-            }
-        }
-
-        // دالة تسجيل دخول سريع
-        function quickLogin(username, password) {
-            document.getElementById('username').value = username;
-            document.getElementById('password').value = password;
-            document.getElementById('loginForm').dispatchEvent(new Event('submit'));
-        }
-
-        // مراقبة حالة الاتصال
-        window.addEventListener('online', () => {
-            updateDeviceInfo();
-            showToast('تم استعادة الاتصال بالإنترنت', 'success');
-        });
-
-        window.addEventListener('offline', () => {
-            updateDeviceInfo();
-            showToast('انقطع الاتصال بالإنترنت', 'warning');
-        });
-    </script>
-</body>
-</html> 
