@@ -15,134 +15,305 @@ let isProcessingCode = false; // Prevent simultaneous code processing
 // Owner Settings
 const OWNER_PASSWORD = "owner123"; // يمكن تغييرها لاحقاً
 
-// DOM Elements
-const loginSection = document.getElementById('loginSection');
-const userInfo = document.getElementById('userInfo');
-const userName = document.getElementById('userName');
-const usernameInput = document.getElementById('usernameInput');
-const passwordInput = document.getElementById('passwordInput');
-const rememberMeCheckbox = document.getElementById('rememberMe');
-const loginBtn = document.getElementById('loginBtn');
-const ownerLoginBtn = document.getElementById('ownerLoginBtn');
-const showOwnerLogin = document.getElementById('showOwnerLogin');
-const logoutBtn = document.getElementById('logoutBtn');
+// DOM Elements - Will be initialized after DOM is ready
+let loginSection = null;
+let userInfo = null;
+let userName = null;
+let usernameInput = null;
+let passwordInput = null;
+let rememberMeCheckbox = null;
+let loginBtn = null;
+let ownerLoginBtn = null;
+let showOwnerLogin = null;
+let logoutBtn = null;
 
-const loginRequired = document.getElementById('loginRequired');
-const scannerSection = document.getElementById('scannerSection');
-const startScanBtn = document.getElementById('startScanBtn');
-const stopScanBtn = document.getElementById('stopScanBtn');
-const flashToggleBtn = document.getElementById('flashToggleBtn');
-const settingsBtn = document.getElementById('settingsBtn');
-const usersBtn = document.getElementById('usersBtn');
+let loginRequired = null;
+let scannerSection = null;
+let startScanBtn = null;
+let stopScanBtn = null;
+let flashToggleBtn = null;
+let settingsBtn = null;
+let usersBtn = null;
 
-const cameraContainer = document.getElementById('cameraContainer');
-const video = document.getElementById('video');
-const canvas = document.getElementById('canvas');
-const resultsList = document.getElementById('resultsList');
+let cameraContainer = null;
+let video = null;
+let canvas = null;
+let resultsList = null;
 
-const settingsModal = document.getElementById('settingsModal');
-const closeSettings = document.getElementById('closeSettings');
-const botToken = document.getElementById('botToken');
-const chatId = document.getElementById('chatId');
-const autoSend = document.getElementById('autoSend');
-const saveSettings = document.getElementById('saveSettings');
-const testConnection = document.getElementById('testConnection');
+let settingsModal = null;
+let closeSettings = null;
+let botToken = null;
+let chatId = null;
+let autoSend = null;
+let saveSettings = null;
+let testConnection = null;
 
-const usersModal = document.getElementById('usersModal');
-const closeUsers = document.getElementById('closeUsers');
-const newUsername = document.getElementById('newUsername');
-const addUser = document.getElementById('addUser');
-const usersList = document.getElementById('usersList');
-const exportUsers = document.getElementById('exportUsers');
-const importUsers = document.getElementById('importUsers');
-const importFile = document.getElementById('importFile');
+let usersModal = null;
+let closeUsers = null;
+let newUsername = null;
+let addUser = null;
+let usersList = null;
+let exportUsers = null;
+let importUsers = null;
+let importFile = null;
 
-const showStatsBtn = document.getElementById('showStatsBtn');
-const showDuplicatesBtn = document.getElementById('showDuplicatesBtn');
-const detailedStatsBtn = document.getElementById('detailedStatsBtn');
+let showStatsBtn = null;
+let showDuplicatesBtn = null;
+let detailedStatsBtn = null;
 
-const statsModal = document.getElementById('statsModal');
-const closeStats = document.getElementById('closeStats');
-const duplicatesModal = document.getElementById('duplicatesModal');
-const closeDuplicates = document.getElementById('closeDuplicates');
-const exportDuplicates = document.getElementById('exportDuplicates');
+let statsModal = null;
+let closeStats = null;
+let duplicatesModal = null;
+let closeDuplicates = null;
+let exportDuplicates = null;
 
-const detailedStatsModal = document.getElementById('detailedStatsModal');
-const closeDetailedStats = document.getElementById('closeDetailedStats');
-const startDate = document.getElementById('startDate');
-const endDate = document.getElementById('endDate');
-const userFilter = document.getElementById('userFilter');
-const applyFilters = document.getElementById('applyFilters');
-const resetFilters = document.getElementById('resetFilters');
-const exportFilteredData = document.getElementById('exportFilteredData');
-const exportFilteredReport = document.getElementById('exportFilteredReport');
+let detailedStatsModal = null;
+let closeDetailedStats = null;
+let startDate = null;
+let endDate = null;
+let userFilter = null;
+let applyFilters = null;
+let resetFilters = null;
+let exportFilteredData = null;
+let exportFilteredReport = null;
 
-const loadingOverlay = document.getElementById('loadingOverlay');
+let loadingOverlay = null;
+let debugBtn = null;
 
 // Event Listeners
-document.addEventListener('DOMContentLoaded', initApp);
-loginBtn.addEventListener('click', handleLogin);
-ownerLoginBtn.addEventListener('click', handleOwnerLogin);
-showOwnerLogin.addEventListener('click', toggleOwnerLogin);
-logoutBtn.addEventListener('click', handleLogout);
-startScanBtn.addEventListener('click', startScanning);
-stopScanBtn.addEventListener('click', stopScanning);
-flashToggleBtn.addEventListener('click', toggleFlash);
-settingsBtn.addEventListener('click', openSettings);
-usersBtn.addEventListener('click', openUsersModal);
-closeSettings.addEventListener('click', closeSettingsModal);
-closeUsers.addEventListener('click', closeUsersModal);
-saveSettings.addEventListener('click', saveSettingsData);
-testConnection.addEventListener('click', testTelegramConnection);
-addUser.addEventListener('click', handleAddUser);
-exportUsers.addEventListener('click', handleExportUsers);
-importUsers.addEventListener('click', () => importFile.click());
-importFile.addEventListener('change', handleImportUsers);
-showStatsBtn.addEventListener('click', openStatsModal);
-showDuplicatesBtn.addEventListener('click', openDuplicatesModal);
-detailedStatsBtn.addEventListener('click', openDetailedStatsModal);
-closeStats.addEventListener('click', closeStatsModal);
-closeDuplicates.addEventListener('click', closeDuplicatesModal);
-closeDetailedStats.addEventListener('click', closeDetailedStatsModal);
-exportDuplicates.addEventListener('click', handleExportDuplicates);
-applyFilters.addEventListener('click', applyDateFilters);
-resetFilters.addEventListener('click', resetDateFilters);
-exportFilteredData.addEventListener('click', exportFilteredDataToJSON);
-exportFilteredReport.addEventListener('click', exportDetailedReport);
+// Multiple DOM ready checks for maximum compatibility
+let appInitialized = false;
 
-// Enter key for login
-usernameInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        if (passwordInput.style.display === 'none') {
-            handleLogin();
+function initializeApp() {
+    if (appInitialized) {
+        console.log('⚠️ App already initialized, skipping...');
+        return;
+    }
+    
+    console.log('⏰ Starting app initialization...');
+    appInitialized = true;
+    initApp();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 DOMContentLoaded event fired!');
+    console.log('Document ready state:', document.readyState);
+    
+    setTimeout(initializeApp, 100);
+});
+
+// Backup in case DOMContentLoaded doesn't work
+window.addEventListener('load', function() {
+    console.log('🌍 Window load event fired!');
+    setTimeout(initializeApp, 50);
+});
+
+// Final backup
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    console.log('📄 Document already ready!');
+    setTimeout(initializeApp, 50);
+}
+
+// Safe event listener binding with null checks
+function bindEventListeners() {
+    console.log('🔗 Binding event listeners...');
+    
+    // Login events
+    if (loginBtn) {
+        loginBtn.addEventListener('click', handleLogin);
+        console.log('✅ loginBtn event bound');
+    } else {
+        console.error('❌ loginBtn element not found');
+    }
+    
+    if (ownerLoginBtn) {
+        ownerLoginBtn.addEventListener('click', handleOwnerLogin);
+        console.log('✅ ownerLoginBtn event bound');
+    } else {
+        console.error('❌ ownerLoginBtn element not found');
+    }
+    
+    if (showOwnerLogin) {
+        showOwnerLogin.addEventListener('click', toggleOwnerLogin);
+        console.log('✅ showOwnerLogin event bound');
+    } else {
+        console.error('❌ showOwnerLogin element not found');
+    }
+    
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', handleLogout);
+        console.log('✅ logoutBtn event bound');
+    } else {
+        console.error('❌ logoutBtn element not found');
+    }
+    // Scanning events
+    if (startScanBtn) startScanBtn.addEventListener('click', startScanning);
+    if (stopScanBtn) stopScanBtn.addEventListener('click', stopScanning);
+    if (flashToggleBtn) flashToggleBtn.addEventListener('click', toggleFlash);
+    
+    // Settings events
+    if (settingsBtn) settingsBtn.addEventListener('click', openSettings);
+    if (closeSettings) closeSettings.addEventListener('click', closeSettingsModal);
+    if (saveSettings) saveSettings.addEventListener('click', saveSettingsData);
+    if (testConnection) testConnection.addEventListener('click', testTelegramConnection);
+    
+    // Users events
+    if (usersBtn) usersBtn.addEventListener('click', openUsersModal);
+    if (closeUsers) closeUsers.addEventListener('click', closeUsersModal);
+    if (addUser) addUser.addEventListener('click', handleAddUser);
+    if (exportUsers) exportUsers.addEventListener('click', handleExportUsers);
+    if (importUsers) importUsers.addEventListener('click', () => importFile?.click());
+    if (importFile) importFile.addEventListener('change', handleImportUsers);
+    
+    // Stats events
+    if (showStatsBtn) showStatsBtn.addEventListener('click', openStatsModal);
+    if (showDuplicatesBtn) showDuplicatesBtn.addEventListener('click', openDuplicatesModal);
+    if (detailedStatsBtn) detailedStatsBtn.addEventListener('click', openDetailedStatsModal);
+    if (closeStats) closeStats.addEventListener('click', closeStatsModal);
+    if (closeDuplicates) closeDuplicates.addEventListener('click', closeDuplicatesModal);
+    if (closeDetailedStats) closeDetailedStats.addEventListener('click', closeDetailedStatsModal);
+    if (exportDuplicates) exportDuplicates.addEventListener('click', handleExportDuplicates);
+    
+    // Filter events
+    if (applyFilters) applyFilters.addEventListener('click', applyDateFilters);
+    if (resetFilters) resetFilters.addEventListener('click', resetDateFilters);
+    if (exportFilteredData) exportFilteredData.addEventListener('click', exportFilteredDataToJSON);
+    if (exportFilteredReport) exportFilteredReport.addEventListener('click', exportDetailedReport);
+    
+    // Debug button
+    if (debugBtn) debugBtn.addEventListener('click', debugTest);
+    
+    console.log('🔗 Event listeners binding completed');
+}
+
+// Debug function for testing
+function debugTest() {
+    console.log('🐛 === DEBUG TEST ===');
+    console.log('All elements status:');
+    console.log('loginBtn:', loginBtn ? '✅' : '❌');
+    console.log('ownerLoginBtn:', ownerLoginBtn ? '✅' : '❌');
+    console.log('showOwnerLogin:', showOwnerLogin ? '✅' : '❌');
+    console.log('usernameInput:', usernameInput ? '✅' : '❌');
+    console.log('passwordInput:', passwordInput ? '✅' : '❌');
+    
+    console.log('Registered users:', registeredUsers);
+    console.log('Current user:', currentUser);
+    console.log('Is owner:', isOwner);
+    
+    // Test login function directly
+    console.log('Testing handleLogin function...');
+    if (usernameInput) {
+        usernameInput.value = 'test';
+        console.log('Set username to "test"');
+        handleLogin();
+    }
+    
+    console.log('🐛 === DEBUG TEST END ===');
+    showAlert('🐛 تم تشغيل اختبار التشخيص - تحقق من Console', 'info');
+}
+
+// Keyboard events moved to bindKeyboardEvents() function
+
+// Initialize DOM Elements
+function initializeDOMElements() {
+    console.log('🎯 Initializing DOM elements...');
+    
+    // Login Elements
+    loginSection = document.getElementById('loginSection');
+    userInfo = document.getElementById('userInfo');
+    userName = document.getElementById('userName');
+    usernameInput = document.getElementById('usernameInput');
+    passwordInput = document.getElementById('passwordInput');
+    rememberMeCheckbox = document.getElementById('rememberMe');
+    loginBtn = document.getElementById('loginBtn');
+    ownerLoginBtn = document.getElementById('ownerLoginBtn');
+    showOwnerLogin = document.getElementById('showOwnerLogin');
+    logoutBtn = document.getElementById('logoutBtn');
+    
+    // Section Elements
+    loginRequired = document.getElementById('loginRequired');
+    scannerSection = document.getElementById('scannerSection');
+    startScanBtn = document.getElementById('startScanBtn');
+    stopScanBtn = document.getElementById('stopScanBtn');
+    flashToggleBtn = document.getElementById('flashToggleBtn');
+    settingsBtn = document.getElementById('settingsBtn');
+    usersBtn = document.getElementById('usersBtn');
+    
+    // Camera Elements
+    cameraContainer = document.getElementById('cameraContainer');
+    video = document.getElementById('video');
+    canvas = document.getElementById('canvas');
+    resultsList = document.getElementById('resultsList');
+    
+    // Modal Elements
+    settingsModal = document.getElementById('settingsModal');
+    closeSettings = document.getElementById('closeSettings');
+    botToken = document.getElementById('botToken');
+    chatId = document.getElementById('chatId');
+    autoSend = document.getElementById('autoSend');
+    saveSettings = document.getElementById('saveSettings');
+    testConnection = document.getElementById('testConnection');
+    
+    usersModal = document.getElementById('usersModal');
+    closeUsers = document.getElementById('closeUsers');
+    newUsername = document.getElementById('newUsername');
+    addUser = document.getElementById('addUser');
+    usersList = document.getElementById('usersList');
+    exportUsers = document.getElementById('exportUsers');
+    importUsers = document.getElementById('importUsers');
+    importFile = document.getElementById('importFile');
+    
+    showStatsBtn = document.getElementById('showStatsBtn');
+    showDuplicatesBtn = document.getElementById('showDuplicatesBtn');
+    detailedStatsBtn = document.getElementById('detailedStatsBtn');
+    
+    statsModal = document.getElementById('statsModal');
+    closeStats = document.getElementById('closeStats');
+    duplicatesModal = document.getElementById('duplicatesModal');
+    closeDuplicates = document.getElementById('closeDuplicates');
+    exportDuplicates = document.getElementById('exportDuplicates');
+    
+    detailedStatsModal = document.getElementById('detailedStatsModal');
+    closeDetailedStats = document.getElementById('closeDetailedStats');
+    startDate = document.getElementById('startDate');
+    endDate = document.getElementById('endDate');
+    userFilter = document.getElementById('userFilter');
+    applyFilters = document.getElementById('applyFilters');
+    resetFilters = document.getElementById('resetFilters');
+    exportFilteredData = document.getElementById('exportFilteredData');
+    exportFilteredReport = document.getElementById('exportFilteredReport');
+    
+    loadingOverlay = document.getElementById('loadingOverlay');
+    debugBtn = document.getElementById('debugBtn');
+    
+    // Check critical elements
+    const criticalElements = [
+        'loginBtn', 'ownerLoginBtn', 'showOwnerLogin', 'usernameInput', 'passwordInput', 'debugBtn'
+    ];
+    
+    console.log('🔍 Checking critical elements:');
+    criticalElements.forEach(elementName => {
+        const element = eval(elementName);
+        if (element) {
+            console.log(`✅ ${elementName}: Found`);
         } else {
-            passwordInput.focus();
+            console.error(`❌ ${elementName}: NOT FOUND`);
         }
-    }
-});
-
-passwordInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        handleOwnerLogin();
-    }
-});
-
-newUsername.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        handleAddUser();
-    }
-});
-
-// Remember me checkbox change event
-rememberMeCheckbox.addEventListener('change', function() {
-    if (this.checked) {
-        showAlert('سيتم حفظ تسجيل الدخول لمدة 30 يوماً', 'info');
-    }
-});
+    });
+    
+    console.log('🎯 DOM elements initialization complete');
+}
 
 // Initialize App
 function initApp() {
     console.log('Initializing Barcode Scanner App...');
+    
+    // Initialize DOM elements first
+    initializeDOMElements();
+    
+    // Bind event listeners after DOM is ready
+    bindEventListeners();
+    bindKeyboardEvents();
     
     // Check if all required libraries are loaded
     checkLibrariesStatus();
@@ -156,7 +327,48 @@ function initApp() {
     console.log('App initialization complete');
 }
 
-// Check libraries status
+// Keyboard event listeners
+function bindKeyboardEvents() {
+    // Enter key for login
+    if (usernameInput) {
+        usernameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                if (passwordInput.style.display === 'none') {
+                    handleLogin();
+                } else {
+                    passwordInput?.focus();
+                }
+            }
+        });
+    }
+
+    if (passwordInput) {
+        passwordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleOwnerLogin();
+            }
+        });
+    }
+
+    if (newUsername) {
+        newUsername.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleAddUser();
+            }
+        });
+    }
+
+    // Remember me checkbox change event
+    if (rememberMeCheckbox) {
+        rememberMeCheckbox.addEventListener('change', function() {
+            if (this.checked) {
+                showAlert('سيتم حفظ تسجيل الدخول لمدة 30 يوماً', 'info');
+            }
+        });
+    }
+}
+
+// Check libraries status (Silent mode to avoid interfering with UI)
 function checkLibrariesStatus() {
     const quaggaLoaded = typeof Quagga !== 'undefined';
     const jsQRLoaded = typeof jsQR !== 'undefined';
@@ -167,23 +379,21 @@ function checkLibrariesStatus() {
     
     if (!quaggaLoaded && !jsQRLoaded) {
         console.error('❌ CRITICAL: No scanning libraries loaded!');
-        showAlert('⚠️ لم يتم تحميل مكتبات المسح. يرجى التحقق من الاتصال بالإنترنت وإعادة تحميل الصفحة.', 'warning');
-        
-        // محاولة إعادة تحميل المكتبات
+        // Show error only for critical failure
         setTimeout(() => {
-            console.log('🔄 Attempting to reload libraries...');
-            location.reload();
-        }, 3000);
+            showAlert('⚠️ لم يتم تحميل مكتبات المسح. سيتم إعادة تحميل الصفحة...', 'warning');
+            setTimeout(() => location.reload(), 2000);
+        }, 1000);
         
     } else if (!quaggaLoaded) {
         console.warn('⚠️ WARNING: Quagga not loaded - only QR codes will work');
-        showAlert('⚠️ سيعمل قارئ الـ QR فقط. لم يتم تحميل قارئ الباركود التقليدي.', 'info');
+        // Silent warning, only log to console
     } else if (!jsQRLoaded) {
         console.warn('⚠️ WARNING: jsQR not loaded - only traditional barcodes will work');
-        showAlert('⚠️ سيعمل قارئ الباركود التقليدي فقط. لم يتم تحميل قارئ الـ QR.', 'info');
+        // Silent warning, only log to console
     } else {
         console.log('✅ All libraries loaded successfully');
-        showAlert('✅ تم تحميل جميع مكتبات المسح بنجاح!', 'success');
+        // Silent success, no alert needed
     }
     
     // تحديث متغيرات حالة المكتبات
@@ -198,47 +408,62 @@ function checkLibrariesStatus() {
 
 // User Management
 function handleLogin() {
-    const username = usernameInput.value.trim();
+    console.log('🔑 handleLogin() called');
+    
+    const username = usernameInput?.value?.trim();
+    console.log('Username:', username);
     
     if (!username) {
+        console.log('❌ No username provided');
         showAlert('يرجى إدخال اسم المستخدم', 'error');
         return;
     }
     
     // Check if user exists in registered users
+    console.log('Registered users:', registeredUsers);
     const userExists = registeredUsers.find(user => user.username === username);
     if (!userExists) {
+        console.log('❌ User not found in registered users');
         showAlert('المستخدم غير مسجل. يرجى التواصل مع الأونر لإنشاء حساب.', 'error');
         return;
     }
     
+    console.log('✅ User found, logging in...');
     currentUser = {
         username: username,
         loginTime: new Date().toISOString()
     };
     
     isOwner = false;
-    const rememberUser = rememberMeCheckbox.checked;
+    const rememberUser = rememberMeCheckbox?.checked || false;
     saveUserSession(rememberUser);
     updateUI();
     showAlert(`مرحباً ${username}!`, 'success');
+    console.log('✅ Login successful');
 }
 
 function handleOwnerLogin() {
-    const username = usernameInput.value.trim();
-    const password = passwordInput.value.trim();
+    console.log('👑 handleOwnerLogin() called');
+    
+    const username = usernameInput?.value?.trim();
+    const password = passwordInput?.value?.trim();
+    console.log('Owner login attempt - Username:', username);
     
     if (!username || !password) {
+        console.log('❌ Missing username or password');
         showAlert('يرجى إدخال اسم المستخدم وكلمة المرور', 'error');
         return;
     }
     
+    console.log('Checking password against:', OWNER_PASSWORD);
     if (password !== OWNER_PASSWORD) {
+        console.log('❌ Invalid owner password');
         showAlert('كلمة مرور خاطئة', 'error');
         passwordInput.value = '';
         return;
     }
     
+    console.log('✅ Owner login successful');
     currentUser = {
         username: username,
         loginTime: new Date().toISOString(),
@@ -246,31 +471,39 @@ function handleOwnerLogin() {
     };
     
     isOwner = true;
-    const rememberUser = rememberMeCheckbox.checked;
+    const rememberUser = rememberMeCheckbox?.checked || false;
     saveUserSession(rememberUser);
     updateUI();
     showAlert(`مرحباً ${username} (الأونر)!`, 'success');
+    console.log('✅ Owner login complete');
 }
 
 function toggleOwnerLogin() {
-    const isOwnerMode = passwordInput.style.display !== 'none';
+    console.log('🔄 toggleOwnerLogin() called');
+    
+    const isOwnerMode = passwordInput?.style?.display !== 'none';
+    console.log('Current owner mode:', isOwnerMode);
     
     if (isOwnerMode) {
         // Switch to regular login
-        passwordInput.style.display = 'none';
-        ownerLoginBtn.style.display = 'none';
-        loginBtn.style.display = 'inline-flex';
-        showOwnerLogin.innerHTML = '<i class="fas fa-user-cog"></i> أونر';
-        usernameInput.placeholder = 'اسم المستخدم';
-        passwordInput.value = '';
+        console.log('Switching to regular login mode');
+        if (passwordInput) passwordInput.style.display = 'none';
+        if (ownerLoginBtn) ownerLoginBtn.style.display = 'none';
+        if (loginBtn) loginBtn.style.display = 'inline-flex';
+        if (showOwnerLogin) showOwnerLogin.innerHTML = '<i class="fas fa-user-cog"></i> أونر';
+        if (usernameInput) usernameInput.placeholder = 'اسم المستخدم';
+        if (passwordInput) passwordInput.value = '';
     } else {
         // Switch to owner login
-        passwordInput.style.display = 'block';
-        ownerLoginBtn.style.display = 'inline-flex';
-        loginBtn.style.display = 'none';
-        showOwnerLogin.innerHTML = '<i class="fas fa-user"></i> مستخدم';
-        usernameInput.placeholder = 'اسم الأونر';
+        console.log('Switching to owner login mode');
+        if (passwordInput) passwordInput.style.display = 'block';
+        if (ownerLoginBtn) ownerLoginBtn.style.display = 'inline-flex';
+        if (loginBtn) loginBtn.style.display = 'none';
+        if (showOwnerLogin) showOwnerLogin.innerHTML = '<i class="fas fa-user"></i> مستخدم';
+        if (usernameInput) usernameInput.placeholder = 'اسم الأونر';
     }
+    
+    console.log('✅ Toggle completed');
 }
 
 function handleLogout() {
@@ -375,14 +608,24 @@ function clearUserSession() {
 
 // Registered Users Management
 function loadRegisteredUsers() {
+    console.log('📋 Loading registered users...');
     const saved = localStorage.getItem('registeredUsers');
     if (saved) {
         registeredUsers = JSON.parse(saved);
+        console.log('✅ Loaded users from localStorage:', registeredUsers);
     } else {
-        // Initialize with empty array
-        registeredUsers = [];
+        // Initialize with default test user
+        registeredUsers = [
+            {
+                username: 'test',
+                createdAt: new Date().toISOString(),
+                createdBy: 'system'
+            }
+        ];
         saveRegisteredUsers();
+        console.log('✅ Created default test user');
     }
+    console.log('Total registered users:', registeredUsers.length);
 }
 
 function saveRegisteredUsers() {
