@@ -301,15 +301,15 @@ app.post('/api/login', async (req, res) => {
 });
 
 // تسجيل الخروج
-app.post('/api/logout', (req, res) => {
+app.post('/api/logout', async (req, res) => {
   const { sessionId } = req.body;
 
   if (sessionId) {
-    db.run("DELETE FROM user_sessions WHERE id = ?", [sessionId], (err) => {
-      if (err) {
-        console.error('خطأ في حذف الجلسة:', err);
-      }
-    });
+    try {
+      await executeRun("DELETE FROM user_sessions WHERE id = ?", [sessionId]);
+    } catch (error) {
+      console.error('خطأ في حذف الجلسة:', error);
+    }
   }
 
   res.json({ success: true, message: 'تم تسجيل الخروج بنجاح' });
@@ -854,20 +854,28 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`🚀 الخادم يعمل على المنفذ ${PORT}`);
   console.log(`🌐 الرابط: http://localhost:${PORT}`);
-  console.log(`📊 قاعدة البيانات: ${dbPath}`);
+  console.log(`📊 قاعدة البيانات: ${isTurso() ? config.database.url : config.database.localPath}`);
 });
 
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n⏹️  إيقاف الخادم...');
-  db.close((err) => {
-    if (err) {
-      console.error('خطأ في إغلاق قاعدة البيانات:', err.message);
-    } else {
-      console.log('✅ تم إغلاق قاعدة البيانات');
-    }
+  
+  if (db && typeof db.close === 'function') {
+    // SQLite local database
+    db.close((err) => {
+      if (err) {
+        console.error('خطأ في إغلاق قاعدة البيانات:', err.message);
+      } else {
+        console.log('✅ تم إغلاق قاعدة البيانات');
+      }
+      process.exit(0);
+    });
+  } else {
+    // Turso database (no close method needed)
+    console.log('✅ تم إنهاء الاتصال بقاعدة البيانات السحابية');
     process.exit(0);
-  });
+  }
 });
 
 module.exports = app; 
