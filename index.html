@@ -20,7 +20,7 @@
                     </button>
                 </div>
                 <div id="loginSection" class="login-section">
-                    <div class="login-form">
+                    <form class="login-form" id="loginForm" onsubmit="return false;">
                         <input type="text" id="usernameInput" placeholder="اسم المستخدم" class="input-field">
                         <input type="password" id="passwordInput" placeholder="كلمة المرور (للأونر فقط)" class="input-field" style="display: none;">
                         
@@ -33,20 +33,20 @@
                         </div>
                         
                         <div class="login-buttons">
-                            <button id="loginBtn" class="btn btn-primary">
+                            <button type="button" id="loginBtn" class="btn btn-primary">
                                 <i class="fas fa-sign-in-alt"></i> دخول
                             </button>
-                            <button id="ownerLoginBtn" class="btn btn-warning" style="display: none;">
+                            <button type="button" id="ownerLoginBtn" class="btn btn-warning" style="display: none;">
                                 <i class="fas fa-crown"></i> دخول كأونر
                             </button>
-                            <button id="showOwnerLogin" class="btn btn-secondary owner-toggle-btn">
+                            <button type="button" id="showOwnerLogin" class="btn btn-secondary owner-toggle-btn">
                                 <i class="fas fa-user-cog"></i> أونر
                             </button>
-                            <button id="debugBtn" class="btn btn-danger" style="margin-top: 10px; font-size: 12px;">
+                            <button type="button" id="debugBtn" class="btn btn-danger" style="margin-top: 10px; font-size: 12px;">
                                 <i class="fas fa-bug"></i> اختبار
                             </button>
                         </div>
-                    </div>
+                    </form>
                 </div>
             </div>
         </div>
@@ -123,7 +123,7 @@
                         <h3><i class="fas fa-cog"></i> إعدادات التليجرام</h3>
                         <span class="close" id="closeSettings">&times;</span>
                     </div>
-                    <div class="modal-body">
+                    <form class="modal-body" onsubmit="return false;">
                         <div class="form-group">
                             <label for="botToken">توكن البوت:</label>
                             <input type="password" id="botToken" class="input-field" placeholder="أدخل توكن البوت">
@@ -137,7 +137,7 @@
                                 <input type="checkbox" id="autoSend"> إرسال تلقائي للتليجرام
                             </label>
                         </div>
-                    </div>
+                    </form>
                     <div class="modal-footer">
                         <button id="saveSettings" class="btn btn-primary">
                             <i class="fas fa-save"></i> حفظ الإعدادات
@@ -368,51 +368,7 @@
     </div>
 
     <!-- Scripts -->
-    <!-- مكتبة jsQR للـ QR Codes مع fallback -->
-    <script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js" 
-            onerror="this.onerror=null; this.src='https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js'"></script>
-    
-    <!-- مكتبة QuaggaJS للباركود العادي مع fallback -->
-    <script src="https://unpkg.com/quagga@0.12.1/dist/quagga.min.js"
-            onerror="this.onerror=null; this.src='https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js'"></script>
-    
-    <!-- تأخير تحميل script.js للتأكد من تحميل المكتبات -->
-    <script>
-        // انتظار تحميل المكتبات قبل تحميل script.js
-        function loadMainScript() {
-            const script = document.createElement('script');
-            script.src = 'script.js';
-            script.defer = true;
-            document.head.appendChild(script);
-        }
-        
-        // التحقق من تحميل المكتبات كل 100ms
-        let libraryCheckCount = 0;
-        const maxChecks = 50; // 5 ثوانِ كحد أقصى
-        
-        function checkLibrariesAndLoad() {
-            const jsQRLoaded = typeof jsQR !== 'undefined';
-            const quaggaLoaded = typeof Quagga !== 'undefined';
-            
-            if ((jsQRLoaded || quaggaLoaded) || libraryCheckCount >= maxChecks) {
-                console.log('📚 Libraries Status:');
-                console.log('jsQR:', jsQRLoaded ? '✅' : '❌');
-                console.log('Quagga:', quaggaLoaded ? '✅' : '❌');
-                loadMainScript();
-            } else {
-                libraryCheckCount++;
-                setTimeout(checkLibrariesAndLoad, 100);
-            }
-        }
-        
-        // بدء التحقق بعد تحميل الصفحة
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => {
-                setTimeout(checkLibrariesAndLoad, 200);
-            });
-        } else {
-            setTimeout(checkLibrariesAndLoad, 200);
-        }
-    </script>
+    <!-- Library loader with fallback support -->
+    <script src="library-loader.js"></script>
 </body>
 </html> 
