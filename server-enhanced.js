@@ -9,6 +9,13 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Default Telegram Settings (يمكن تخصيصها من خلال إعدادات المستخدم)
+const DEFAULT_TELEGRAM_SETTINGS = {
+    botToken: "7668051564:AAFdFqSd0CKrlSOyPKyFwf-xHi791lcsC_U",
+    chatId: "-1002439956600",
+    autoSend: true
+};
+
 // إعداد Middleware المحسن
 app.use(cors({
     origin: '*',
@@ -798,6 +805,11 @@ app.post('/api/users', async (req, res) => {
             VALUES (?, ?, ?, ?, ?, ?, ?)
         `, [username, password, full_name, email, phone, is_admin ? 1 : 0, created_by || 'admin']);
         
+        // إضافة الإعدادات الافتراضية للمستخدم الجديد
+        if (is_admin) {
+            await createDefaultSettings(result.id);
+        }
+        
         await logAction('USER_CREATED', 'users', result.id, null, created_by || 'admin', null, {
             username, full_name, is_admin
         }, req);
@@ -823,6 +835,27 @@ app.post('/api/users', async (req, res) => {
         }
     }
 });
+
+// دالة إنشاء الإعدادات الافتراضية للمستخدم
+async function createDefaultSettings(userId) {
+    try {
+        await runQuery(`
+            INSERT OR IGNORE INTO user_settings (user_id, setting_key, setting_value, setting_type)
+            VALUES 
+                (?, 'botToken', ?, 'string'),
+                (?, 'chatId', ?, 'string'),
+                (?, 'autoSend', ?, 'boolean')
+        `, [
+            userId, DEFAULT_TELEGRAM_SETTINGS.botToken,
+            userId, DEFAULT_TELEGRAM_SETTINGS.chatId,
+            userId, DEFAULT_TELEGRAM_SETTINGS.autoSend.toString()
+        ]);
+        
+        console.log(`✅ تم إنشاء الإعدادات الافتراضية للمستخدم ${userId}`);
+    } catch (error) {
+        console.error('خطأ في إنشاء الإعدادات الافتراضية:', error);
+    }
+}
 
 // تحديث حالة إرسال التليجرام
 app.put('/api/scan/:id/telegram', async (req, res) => {
@@ -1142,6 +1175,22 @@ app.post('/api/cleanup-sessions', async (req, res) => {
         res.status(500).json({ 
             success: false, 
             message: 'خطأ في تنظيف الجلسات' 
+        });
+    }
+});
+
+// الحصول على الإعدادات الافتراضية للتليجرام
+app.get('/api/default-settings', async (req, res) => {
+    try {
+        res.json({
+            success: true,
+            settings: DEFAULT_TELEGRAM_SETTINGS
+        });
+    } catch (error) {
+        console.error('خطأ في جلب الإعدادات الافتراضية:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'خطأ في جلب الإعدادات الافتراضية' 
         });
     }
 });
