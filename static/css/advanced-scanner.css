@@ -1,0 +1,577 @@
+/* ماسح الباركود المتقدم - تصميم جميل ومتطور */
+
+/* الحاوية الرئيسية */
+.advanced-scanner-container {
+    max-width: 600px;
+    margin: 0 auto;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 20px;
+    padding: 20px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    position: relative;
+    overflow: hidden;
+}
+
+.advanced-scanner-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255,255,255,0.1);
+    backdrop-filter: blur(10px);
+    border-radius: 20px;
+    z-index: -1;
+}
+
+/* رأس الماسح */
+.scanner-header {
+    background: rgba(255,255,255,0.95);
+    border-radius: 15px;
+    padding: 15px;
+    margin-bottom: 20px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+.scanner-status {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+}
+
+.status-indicator.loading { color: #007bff; }
+.status-indicator.scanning { color: #28a745; }
+.status-indicator.processing { color: #ffc107; }
+.status-indicator.success { color: #28a745; }
+.status-indicator.error { color: #dc3545; }
+.status-indicator.stopped { color: #6c757d; }
+
+.scan-stats {
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.stat-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 8px 12px;
+    background: rgba(0,0,0,0.05);
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    transition: transform 0.2s ease;
+}
+
+.stat-item:hover {
+    transform: scale(1.05);
+}
+
+.stat-item.success { color: #28a745; }
+.stat-item.accuracy { color: #007bff; }
+
+/* منطقة المسح */
+.scanner-viewport {
+    position: relative;
+    background: #000;
+    border-radius: 15px;
+    overflow: hidden;
+    margin-bottom: 20px;
+    min-height: 300px;
+    max-height: 400px;
+}
+
+.scanner-camera {
+    width: 100%;
+    height: 100%;
+    position: relative;
+}
+
+.scanner-camera video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 15px;
+}
+
+.scanner-camera canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+/* إطار التركيز */
+.focus-frame {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 250px;
+    height: 250px;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.frame-corners {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.corner {
+    position: absolute;
+    width: 30px;
+    height: 30px;
+    border: 3px solid #00ff00;
+    animation: pulse 2s infinite ease-in-out;
+}
+
+.corner.top-left {
+    top: 0;
+    left: 0;
+    border-right: none;
+    border-bottom: none;
+    border-top-left-radius: 10px;
+}
+
+.corner.top-right {
+    top: 0;
+    right: 0;
+    border-left: none;
+    border-bottom: none;
+    border-top-right-radius: 10px;
+}
+
+.corner.bottom-left {
+    bottom: 0;
+    left: 0;
+    border-right: none;
+    border-top: none;
+    border-bottom-left-radius: 10px;
+}
+
+.corner.bottom-right {
+    bottom: 0;
+    right: 0;
+    border-left: none;
+    border-top: none;
+    border-bottom-right-radius: 10px;
+}
+
+.scan-line {
+    position: absolute;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #00ff00, transparent);
+    top: 50%;
+    left: 0;
+    animation: scanLine 2s infinite linear;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+@keyframes scanLine {
+    0% { transform: translateY(-125px); }
+    100% { transform: translateY(125px); }
+}
+
+/* عرض الكود المكتشف */
+.detected-code {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    right: 20px;
+    background: rgba(0,255,0,0.9);
+    color: #000;
+    padding: 15px;
+    border-radius: 10px;
+    transform: translateY(-100px);
+    opacity: 0;
+    transition: all 0.3s ease;
+    z-index: 20;
+}
+
+.detected-code.detected {
+    transform: translateY(0);
+    opacity: 1;
+}
+
+.code-frame {
+    text-align: center;
+}
+
+.code-text {
+    font-size: 1.2rem;
+    font-weight: bold;
+    margin-bottom: 5px;
+    word-break: break-all;
+}
+
+.code-type {
+    font-size: 0.9rem;
+    opacity: 0.8;
+}
+
+/* رسائل التوجيه */
+.scanner-guidance {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    right: 20px;
+    text-align: center;
+    color: white;
+    background: rgba(0,0,0,0.7);
+    padding: 15px;
+    border-radius: 10px;
+    backdrop-filter: blur(10px);
+}
+
+.guidance-text {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-size: 1rem;
+}
+
+/* أزرار التحكم */
+.scanner-controls {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.btn-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 25px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    min-width: 120px;
+    justify-content: center;
+}
+
+.btn-start {
+    background: linear-gradient(135deg, #28a745, #20c997);
+    color: white;
+}
+
+.btn-start:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(40,167,69,0.3);
+}
+
+.btn-stop {
+    background: linear-gradient(135deg, #dc3545, #e74c3c);
+    color: white;
+}
+
+.btn-stop:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(220,53,69,0.3);
+}
+
+.btn-torch {
+    background: linear-gradient(135deg, #ffc107, #f39c12);
+    color: #000;
+}
+
+.btn-torch:hover, .btn-torch.active {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(255,193,7,0.3);
+    background: linear-gradient(135deg, #f39c12, #ffc107);
+}
+
+/* النتائج الأخيرة */
+.recent-scans {
+    background: rgba(255,255,255,0.95);
+    border-radius: 15px;
+    padding: 15px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+.recent-scans h6 {
+    margin: 0 0 15px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    color: #333;
+}
+
+.scans-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.scan-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    border-left: 4px solid #dee2e6;
+    transition: all 0.3s ease;
+}
+
+.scan-item:hover {
+    transform: translateX(5px);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+.scan-item.success {
+    border-left-color: #28a745;
+    background: linear-gradient(135deg, #d4edda, #c3e6cb);
+}
+
+.scan-item.failed {
+    border-left-color: #dc3545;
+    background: linear-gradient(135deg, #f8d7da, #f5c6cb);
+}
+
+.scan-item.error {
+    border-left-color: #ffc107;
+    background: linear-gradient(135deg, #fff3cd, #ffeaa7);
+}
+
+.scan-info {
+    flex: 1;
+}
+
+.scan-code {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 5px;
+    word-break: break-all;
+}
+
+.scan-meta {
+    display: flex;
+    gap: 15px;
+    font-size: 0.8rem;
+    color: #666;
+}
+
+.scan-status i {
+    font-size: 1.2rem;
+}
+
+.scan-item.success .scan-status i { color: #28a745; }
+.scan-item.failed .scan-status i { color: #dc3545; }
+.scan-item.error .scan-status i { color: #ffc107; }
+
+/* نافذة التكرارات */
+.duplicate-info .alert {
+    border-radius: 10px;
+    border: none;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+.scan-comparison {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 15px;
+    text-align: center;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+}
+
+.scan-comparison h6 {
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.scan-image {
+    border-radius: 8px;
+    max-height: 200px;
+    object-fit: contain;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+}
+
+.no-image {
+    padding: 50px;
+    color: #666;
+    font-style: italic;
+    background: #e9ecef;
+    border-radius: 8px;
+}
+
+/* تحسينات للشاشات الصغيرة */
+@media (max-width: 768px) {
+    .advanced-scanner-container {
+        margin: 10px;
+        padding: 15px;
+    }
+    
+    .scanner-status {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    
+    .scan-stats {
+        justify-content: center;
+        width: 100%;
+    }
+    
+    .focus-frame {
+        width: 200px;
+        height: 200px;
+    }
+    
+    .scanner-controls {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .btn-control {
+        width: 100%;
+        max-width: 200px;
+    }
+    
+    .scan-meta {
+        flex-direction: column;
+        gap: 5px;
+    }
+}
+
+/* تأثيرات الحركة */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes bounceIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.3);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.05);
+    }
+    70% {
+        transform: scale(0.9);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.advanced-scanner-container {
+    animation: fadeInUp 0.6s ease-out;
+}
+
+.scan-item {
+    animation: bounceIn 0.5s ease-out;
+}
+
+/* تحسين شريط التمرير */
+.scans-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.scans-list::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+.scans-list::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 3px;
+}
+
+.scans-list::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* تأثيرات خاصة للنجاح والفشل */
+.status-indicator.success {
+    animation: successPulse 0.6s ease-out;
+}
+
+.status-indicator.error {
+    animation: errorShake 0.6s ease-out;
+}
+
+@keyframes successPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+@keyframes errorShake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+}
+
+/* تحسين الخطوط العربية */
+.advanced-scanner-container {
+    font-family: 'Segoe UI', 'Tahoma', 'Arial', sans-serif;
+    direction: rtl;
+    text-align: right;
+}
+
+.code-text, .scan-code {
+    direction: ltr;
+    text-align: center;
+    font-family: 'Courier New', monospace;
+}
+
+/* تأثيرات الخلفية المتحركة */
+.advanced-scanner-container::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: linear-gradient(45deg, transparent, rgba(255,255,255,0.1), transparent);
+    animation: shimmer 3s infinite;
+    z-index: -1;
+}
+
+@keyframes shimmer {
+    0% { transform: translateX(-100%) translateY(-100%); }
+    100% { transform: translateX(100%) translateY(100%); }
+} 

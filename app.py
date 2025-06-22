@@ -59,7 +59,7 @@ def init_database():
         )
     ''')
     
-    # جدول النتائج (مع إضافة معرف المستخدم)
+    # جدول النتائج المحسن
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS scan_results (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,9 +72,60 @@ def init_database():
             telegram_sent BOOLEAN DEFAULT 0,
             image_path TEXT,
             user_id INTEGER,
+            is_duplicate BOOLEAN DEFAULT 0,
+            previous_time TEXT,
+            current_time TEXT,
+            has_images BOOLEAN DEFAULT 0,
+            image_count INTEGER DEFAULT 0,
             FOREIGN KEY (user_id) REFERENCES users (id)
         )
     ''')
+    
+    # إضافة الأعمدة الجديدة للجداول الموجودة (إذا لم تكن موجودة)
+    try:
+        cursor.execute('ALTER TABLE scan_results ADD COLUMN user_id INTEGER')
+    except sqlite3.OperationalError:
+        pass  # العمود موجود بالفعل
+    
+    try:
+        cursor.execute('ALTER TABLE scan_results ADD COLUMN is_duplicate BOOLEAN DEFAULT 0')
+    except sqlite3.OperationalError:
+        pass  # العمود موجود بالفعل
+    
+    try:
+        cursor.execute('ALTER TABLE scan_results ADD COLUMN previous_time TEXT')
+    except sqlite3.OperationalError:
+        pass
+    
+    try:
+        cursor.execute('ALTER TABLE scan_results ADD COLUMN current_time TEXT')
+    except sqlite3.OperationalError:
+        pass
+    
+    try:
+        cursor.execute('ALTER TABLE scan_results ADD COLUMN has_images BOOLEAN DEFAULT 0')
+    except sqlite3.OperationalError:
+        pass
+    
+    try:
+        cursor.execute('ALTER TABLE scan_results ADD COLUMN image_count INTEGER DEFAULT 0')
+    except sqlite3.OperationalError:
+        pass
+    
+    try:
+        cursor.execute('ALTER TABLE scan_results ADD COLUMN telegram_attempts INTEGER DEFAULT 0')
+    except sqlite3.OperationalError:
+        pass
+    
+    try:
+        cursor.execute('ALTER TABLE scan_results ADD COLUMN telegram_error TEXT')
+    except sqlite3.OperationalError:
+        pass
+    
+    try:
+        cursor.execute('ALTER TABLE scan_results ADD COLUMN last_retry_attempt DATETIME')
+    except sqlite3.OperationalError:
+        pass
     
     # جدول الإعدادات
     cursor.execute('''
@@ -368,6 +419,163 @@ def test_telegram_connection():
     except Exception as e:
         return {'success': False, 'error': f'خطأ في الاتصال: {str(e)}'}
 
+def send_telegram_with_retry(code_data, code_type, notes, images, is_duplicate=False, max_retries=3, result_id=None):
+    """إرسال متقدم للتليجرام مع إعادة المحاولة المحسنة"""
+    last_error = ""
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            # إعدادات ثابتة
+            bot_token = TELEGRAM_BOT_TOKEN
+            chat_id = TELEGRAM_CHAT_ID
+            
+            if not bot_token or not chat_id:
+                last_error = "إعدادات تليجرام غير مكتملة"
+                print(f"محاولة {attempt}: {last_error}")
+                if attempt < max_retries:
+                    time.sleep(attempt * 2)
+                    continue
+                break
+            
+            # إنشاء الرسالة
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            if is_duplicate:
+                message = f"""
+⚠️ <b>باركود مكرر - إرسال مكرر</b>
+
+📊 <b>البيانات:</b> <code>{code_data}</code>
+🏷️ <b>النوع:</b> {code_type}
+🔄 <b>حالة:</b> مكرر - تم الإرسال بواسطة المستخدم
+🕒 <b>وقت الإرسال:</b> {current_time}
+🔄 <b>المحاولة:</b> {attempt}/{max_retries}
+
+{f"📝 <b>ملاحظات:</b> {notes}" if notes else ""}
+
+🖼️ <b>الصور المرفقة:</b> {len(images)}
+                """
+            else:
+                message = f"""
+🔍 <b>مسح باركود جديد</b>
+
+📊 <b>البيانات:</b> <code>{code_data}</code>
+🏷️ <b>النوع:</b> {code_type}
+🕒 <b>الوقت:</b> {current_time}
+⚡ <b>المصدر:</b> ماسح متقدم
+🔄 <b>المحاولة:</b> {attempt}/{max_retries}
+
+{f"📝 <b>ملاحظات:</b> {notes}" if notes else ""}
+
+🖼️ <b>الصور المرفقة:</b> {len(images)}
+                """
+            
+            message = message.strip()
+            
+            # إرسال الرسالة النصية أولاً
+            text_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+            text_data = {
+                'chat_id': chat_id,
+                'text': message,
+                'parse_mode': 'HTML'
+            }
+            
+            text_response = requests.post(text_url, data=text_data, timeout=30)
+            
+            if text_response.status_code != 200:
+                last_error = f"HTTP {text_response.status_code}: {text_response.text[:100]}"
+                print(f"محاولة {attempt} فشلت في إرسال النص: {last_error}")
+                
+                if attempt < max_retries:
+                    time.sleep(attempt * 2)  # انتظار متزايد
+                    continue
+                break
+            
+            # إرسال الصور
+            photo_url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+            images_sent = 0
+            
+            for image_label, image_path in images:
+                if os.path.exists(image_path):
+                    try:
+                        with open(image_path, 'rb') as photo:
+                            files_data = {
+                                'chat_id': chat_id,
+                                'caption': f"📷 {image_label} (محاولة {attempt})",
+                                'parse_mode': 'HTML'
+                            }
+                            files = {'photo': photo}
+                            
+                            photo_response = requests.post(photo_url, data=files_data, files=files, timeout=30)
+                            
+                            if photo_response.status_code == 200:
+                                images_sent += 1
+                                print(f"تم إرسال الصورة {image_label} بنجاح في المحاولة {attempt}")
+                            else:
+                                print(f"فشل في إرسال الصورة {image_label}: {photo_response.status_code}")
+                                
+                            # انتظار قصير بين الصور
+                            time.sleep(0.5)
+                            
+                    except Exception as img_error:
+                        print(f"خطأ في إرسال الصورة {image_label}: {img_error}")
+                        continue
+                else:
+                    print(f"الصورة غير موجودة: {image_path}")
+            
+            # تحديث قاعدة البيانات بنجاح الإرسال
+            if result_id:
+                try:
+                    conn = get_db_connection()
+                    conn.execute('''
+                        UPDATE scan_results 
+                        SET telegram_sent = 1, telegram_attempts = ?, telegram_error = NULL, last_retry_attempt = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    ''', (attempt, result_id))
+                    conn.commit()
+                    conn.close()
+                except Exception as db_error:
+                    print(f"خطأ في تحديث قاعدة البيانات: {db_error}")
+            
+            print(f"✅ تم الإرسال بنجاح في المحاولة {attempt}")
+            return True
+            
+        except requests.exceptions.Timeout:
+            last_error = f"انتهت مهلة الاتصال (محاولة {attempt})"
+            print(last_error)
+        except requests.exceptions.ConnectionError:
+            last_error = f"خطأ في الاتصال بالإنترنت (محاولة {attempt})"
+            print(last_error)
+        except Exception as e:
+            last_error = f"خطأ غير متوقع: {str(e)} (محاولة {attempt})"
+            print(last_error)
+        
+        # انتظار قبل المحاولة التالية
+        if attempt < max_retries:
+            wait_time = attempt * 2
+            print(f"انتظار {wait_time} ثانية قبل المحاولة التالية...")
+            time.sleep(wait_time)
+    
+    # حفظ الخطأ الأخير في قاعدة البيانات
+    if result_id:
+        try:
+            conn = get_db_connection()
+            conn.execute('''
+                UPDATE scan_results 
+                SET telegram_sent = 0, telegram_attempts = ?, telegram_error = ?, last_retry_attempt = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (max_retries, last_error, result_id))
+            conn.commit()
+            conn.close()
+        except Exception as db_error:
+            print(f"خطأ في حفظ خطأ التليجرام: {db_error}")
+    
+    print(f"❌ فشل في الإرسال بعد {max_retries} محاولات. آخر خطأ: {last_error}")
+    return False
+
+def send_advanced_telegram(code_data, code_type, notes, images, is_duplicate=False):
+    """الدالة القديمة للتوافق مع الكود السابق"""
+    return send_telegram_with_retry(code_data, code_type, notes, images, is_duplicate, 3, None)
+
 def update_statistics():
     """تحديث الإحصائيات اليومية"""
     conn = get_db_connection()
@@ -455,12 +663,22 @@ def index():
 @app.route('/api/scan', methods=['POST'])
 @login_required
 def save_scan_result():
-    """حفظ نتيجة المسح"""
+    """حفظ نتيجة المسح المتقدم مع الصور ومعالجة التكرارات"""
     try:
-        data = request.get_json()
-        code_data = data.get('code_data', '')
-        code_type = data.get('code_type', 'unknown')
-        notes = data.get('notes', '')
+        # التحقق من نوع البيانات
+        if request.content_type and 'multipart/form-data' in request.content_type:
+            # بيانات مع ملفات
+            code_data = request.form.get('code_data', '').strip()
+            code_type = request.form.get('code_type', 'unknown')
+            notes = request.form.get('notes', '')
+            is_duplicate = request.form.get('is_duplicate', 'false').lower() == 'true'
+        else:
+            # بيانات JSON عادية
+            data = request.get_json()
+            code_data = data.get('code_data', '')
+            code_type = data.get('code_type', 'unknown')
+            notes = data.get('notes', '')
+            is_duplicate = data.get('is_duplicate', False)
         
         if not code_data:
             return jsonify({'success': False, 'error': 'لا توجد بيانات للحفظ'})
@@ -469,43 +687,125 @@ def save_scan_result():
         if not user:
             return jsonify({'success': False, 'error': 'مطلوب تسجيل الدخول'})
         
+        # معالجة الصور
+        image_paths = []
+        uploaded_images = []
+        
+        # صورة الباركود الحالية
+        if 'image' in request.files:
+            image = request.files['image']
+            if image and image.filename:
+                filename = secure_filename(f"barcode_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{image.filename}")
+                image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                image.save(image_path)
+                image_paths.append(image_path)
+                uploaded_images.append(('صورة الباركود', image_path))
+        
+        # صور التكرار
+        if is_duplicate:
+            if 'previous_image' in request.files:
+                prev_image = request.files['previous_image']
+                if prev_image and prev_image.filename:
+                    filename = secure_filename(f"previous_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{prev_image.filename}")
+                    image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                    prev_image.save(image_path)
+                    image_paths.append(image_path)
+                    uploaded_images.append(('المسح السابق', image_path))
+            
+            if 'current_image' in request.files:
+                curr_image = request.files['current_image']
+                if curr_image and curr_image.filename:
+                    filename = secure_filename(f"current_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{curr_image.filename}")
+                    image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                    curr_image.save(image_path)
+                    image_paths.append(image_path)
+                    uploaded_images.append(('المسح الحالي', image_path))
+        
         # حفظ في قاعدة البيانات
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        # بيانات إضافية للتكرار
+        previous_time = request.form.get('previous_time', '') if hasattr(request, 'form') else ''
+        current_time = request.form.get('current_time', '') if hasattr(request, 'form') else ''
+        
         cursor.execute('''
-            INSERT INTO scan_results (code_data, code_type, user_agent, ip_address, notes, user_id)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (code_data, code_type, request.user_agent.string, request.remote_addr, notes, user['id']))
+            INSERT INTO scan_results (
+                code_data, code_type, user_agent, ip_address, notes, user_id,
+                is_duplicate, previous_time, current_time, has_images, image_count
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            code_data, code_type, request.user_agent.string, request.remote_addr, notes, user['id'],
+            is_duplicate, previous_time, current_time, len(image_paths) > 0, len(image_paths)
+        ))
         
         result_id = cursor.lastrowid
         conn.commit()
         conn.close()
         
-        # إرسال إلى تليجرام
-        telegram_message = f"""
+        # إرسال إلى التليجرام مع نظام إعادة المحاولة المحسن
+        if uploaded_images:
+            # استخدام الدالة المتقدمة للصور مع إعادة المحاولة
+            telegram_success = send_telegram_with_retry(code_data, code_type, notes, uploaded_images, is_duplicate, 3, result_id)
+        else:
+            # إرسال رسالة نصية بسيطة
+            telegram_message = f"""
 🔍 <b>نتيجة مسح جديدة</b>
 
 📊 <b>البيانات:</b> <code>{code_data}</code>
 🏷️ <b>النوع:</b> {code_type}
 🕒 <b>الوقت:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 🔢 <b>رقم العملية:</b> #{result_id}
+👤 <b>المستخدم:</b> {user['username']}
 
 💻 <b>معلومات النظام:</b>
 - IP: {request.remote_addr}
 - المتصفح: {request.user_agent.browser}
 
 {f"📝 <b>ملاحظات:</b> {notes}" if notes else ""}
-        """
-        
-        telegram_sent = send_telegram_message(telegram_message.strip())
-        
-        # تحديث حالة الإرسال
-        if telegram_sent:
-            conn = get_db_connection()
-            conn.execute('UPDATE scan_results SET telegram_sent = 1 WHERE id = ?', (result_id,))
-            conn.commit()
-            conn.close()
+            """
+            # إعادة المحاولة للرسائل النصية
+            telegram_success = False
+            max_retries = 3
+            last_error = ""
+            
+            for attempt in range(1, max_retries + 1):
+                try:
+                    if send_telegram_message(telegram_message.strip()):
+                        telegram_success = True
+                        # تحديث قاعدة البيانات بنجاح الإرسال
+                        conn = get_db_connection()
+                        conn.execute('''
+                            UPDATE scan_results 
+                            SET telegram_sent = 1, telegram_attempts = ?, telegram_error = NULL, last_retry_attempt = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                        ''', (attempt, result_id))
+                        conn.commit()
+                        conn.close()
+                        print(f"✅ تم إرسال الرسالة النصية بنجاح في المحاولة {attempt}")
+                        break
+                    else:
+                        last_error = f"فشل إرسال الرسالة النصية في المحاولة {attempt}"
+                        print(last_error)
+                        
+                except Exception as telegram_error:
+                    last_error = f"خطأ في المحاولة {attempt}: {str(telegram_error)}"
+                    print(last_error)
+                
+                if attempt < max_retries:
+                    time.sleep(attempt * 2)
+            
+            # حفظ الخطأ إذا فشلت جميع المحاولات
+            if not telegram_success:
+                conn = get_db_connection()
+                conn.execute('''
+                    UPDATE scan_results 
+                    SET telegram_sent = 0, telegram_attempts = ?, telegram_error = ?, last_retry_attempt = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (max_retries, last_error, result_id))
+                conn.commit()
+                conn.close()
         
         # تحديث الإحصائيات
         update_statistics()
@@ -513,12 +813,16 @@ def save_scan_result():
         return jsonify({
             'success': True,
             'id': result_id,
-            'telegram_sent': telegram_sent,
-            'message': 'تم حفظ النتيجة بنجاح'
+            'telegram_sent': telegram_success,
+            'images_saved': len(image_paths),
+            'is_duplicate': is_duplicate,
+            'message': 'تم حفظ النتيجة بنجاح',
+            'telegram_attempts': max_retries if not telegram_success else min(max_retries, attempt)
         })
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        print(f"خطأ في save_scan_result: {e}")
+        return jsonify({'success': False, 'error': f'خطأ في معالجة الطلب: {str(e)}'})
 
 @app.route('/api/results')
 @login_required
@@ -541,9 +845,10 @@ def get_results():
             where_clause = "WHERE code_data LIKE ? OR notes LIKE ?"
             params = [f'%{search}%', f'%{search}%']
         
-        # الحصول على النتائج
+        # الحصول على النتائج مع معلومات إعادة المحاولة
         query = f'''
-            SELECT id, code_data, code_type, timestamp, notes, telegram_sent, ip_address
+            SELECT id, code_data, code_type, timestamp, notes, telegram_sent, ip_address,
+                   telegram_attempts, telegram_error, last_retry_attempt, is_duplicate
             FROM scan_results 
             {where_clause}
             ORDER BY timestamp DESC 
@@ -621,6 +926,155 @@ def get_statistics():
             'today': dict(today),
             'weekly': [dict(row) for row in weekly],
             'top_codes': [dict(row) for row in top_codes]
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/telegram/retry/<int:result_id>', methods=['POST'])
+@login_required
+def retry_telegram_send(result_id):
+    """إعادة محاولة إرسال رسالة فاشلة إلى التليجرام"""
+    try:
+        conn = get_db_connection()
+        
+        # الحصول على بيانات النتيجة
+        result = conn.execute('''
+            SELECT id, code_data, code_type, notes, telegram_sent, 
+                   is_duplicate, previous_time, current_time, has_images, image_count
+            FROM scan_results WHERE id = ?
+        ''', (result_id,)).fetchone()
+        
+        if not result:
+            conn.close()
+            return jsonify({'success': False, 'error': 'النتيجة غير موجودة'})
+        
+        if result['telegram_sent']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'تم إرسال هذه الرسالة بالفعل'})
+        
+        conn.close()
+        
+        # البحث عن الصور المرتبطة
+        images = []
+        if result['has_images'] and result['image_count'] > 0:
+            # محاولة العثور على الصور في مجلد الرفع
+            upload_folder = app.config.get('UPLOAD_FOLDER', 'uploads')
+            if os.path.exists(upload_folder):
+                # البحث عن الصور بناءً على timestamp أو result_id
+                for filename in os.listdir(upload_folder):
+                    if f"_{result_id}_" in filename or str(result['code_data'])[:10] in filename:
+                        image_path = os.path.join(upload_folder, filename)
+                        if filename.startswith('barcode_'):
+                            images.append(('صورة الباركود', image_path))
+                        elif filename.startswith('previous_'):
+                            images.append(('المسح السابق', image_path))
+                        elif filename.startswith('current_'):
+                            images.append(('المسح الحالي', image_path))
+        
+        # إعادة المحاولة
+        if images:
+            telegram_success = send_telegram_with_retry(
+                result['code_data'], 
+                result['code_type'], 
+                result['notes'], 
+                images, 
+                result['is_duplicate'], 
+                3, 
+                result_id
+            )
+        else:
+            # إرسال رسالة نصية
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            telegram_message = f"""
+🔄 <b>إعادة إرسال - نتيجة مسح</b>
+
+📊 <b>البيانات:</b> <code>{result['code_data']}</code>
+🏷️ <b>النوع:</b> {result['code_type']}
+🕒 <b>وقت الإعادة:</b> {current_time}
+🔢 <b>رقم العملية:</b> #{result_id}
+🔄 <b>حالة:</b> إعادة محاولة يدوية
+
+{f"📝 <b>ملاحظات:</b> {result['notes']}" if result['notes'] else ""}
+            """
+            
+            # محاولة إرسال الرسالة النصية مع إعادة المحاولة
+            telegram_success = False
+            max_retries = 3
+            last_error = ""
+            
+            for attempt in range(1, max_retries + 1):
+                try:
+                    if send_telegram_message(telegram_message.strip()):
+                        telegram_success = True
+                        # تحديث قاعدة البيانات
+                        conn = get_db_connection()
+                        conn.execute('''
+                            UPDATE scan_results 
+                            SET telegram_sent = 1, telegram_attempts = ?, telegram_error = NULL, last_retry_attempt = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                        ''', (attempt, result_id))
+                        conn.commit()
+                        conn.close()
+                        break
+                    else:
+                        last_error = f"فشل في المحاولة {attempt}"
+                        
+                except Exception as e:
+                    last_error = f"خطأ في المحاولة {attempt}: {str(e)}"
+                
+                if attempt < max_retries:
+                    time.sleep(attempt * 2)
+            
+            # حفظ الخطأ إذا فشلت جميع المحاولات
+            if not telegram_success:
+                conn = get_db_connection()
+                conn.execute('''
+                    UPDATE scan_results 
+                    SET telegram_sent = 0, telegram_attempts = ?, telegram_error = ?, last_retry_attempt = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (max_retries, last_error, result_id))
+                conn.commit()
+                conn.close()
+        
+        if telegram_success:
+            return jsonify({
+                'success': True, 
+                'message': 'تم إعادة الإرسال بنجاح',
+                'result_id': result_id
+            })
+        else:
+            return jsonify({
+                'success': False, 
+                'error': 'فشل في إعادة الإرسال بعد عدة محاولات',
+                'result_id': result_id
+            })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'خطأ في إعادة المحاولة: {str(e)}'})
+
+@app.route('/api/telegram/failed')
+@login_required
+def get_failed_telegram_messages():
+    """الحصول على الرسائل الفاشلة التي تحتاج إعادة محاولة"""
+    try:
+        conn = get_db_connection()
+        
+        failed_messages = conn.execute('''
+            SELECT id, code_data, code_type, timestamp, notes, telegram_attempts, 
+                   telegram_error, last_retry_attempt, is_duplicate
+            FROM scan_results 
+            WHERE telegram_sent = 0
+            ORDER BY timestamp DESC 
+            LIMIT 50
+        ''').fetchall()
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'failed_messages': [dict(msg) for msg in failed_messages],
+            'count': len(failed_messages)
         })
         
     except Exception as e:
@@ -758,13 +1212,13 @@ def get_users():
             where_clause = "WHERE username LIKE ? OR email LIKE ?"
             params = [f'%{search}%', f'%{search}%']
         
-        # الحصول على المستخدمين
+        # الحصول على المستخدمين مع معالجة أفضل لعمود user_id
         query = f'''
-            SELECT id, username, email, role, created_at, last_login, is_active,
-                   (SELECT COUNT(*) FROM scan_results WHERE user_id = users.id) as scan_count
-            FROM users 
+            SELECT u.id, u.username, u.email, u.role, u.created_at, u.last_login, u.is_active,
+                   COALESCE((SELECT COUNT(*) FROM scan_results sr WHERE sr.user_id = u.id), 0) as scan_count
+            FROM users u
             {where_clause}
-            ORDER BY created_at DESC 
+            ORDER BY u.created_at DESC 
             LIMIT ? OFFSET ?
         '''
         
@@ -833,10 +1287,10 @@ def manage_user(user_id):
         if request.method == 'GET':
             # الحصول على تفاصيل المستخدم
             user = conn.execute('''
-                SELECT id, username, email, role, created_at, last_login, is_active,
-                       (SELECT COUNT(*) FROM scan_results WHERE user_id = ?) as scan_count
-                FROM users WHERE id = ?
-            ''', (user_id, user_id)).fetchone()
+                SELECT u.id, u.username, u.email, u.role, u.created_at, u.last_login, u.is_active,
+                       COALESCE((SELECT COUNT(*) FROM scan_results sr WHERE sr.user_id = u.id), 0) as scan_count
+                FROM users u WHERE u.id = ?
+            ''', (user_id,)).fetchone()
             
             if not user:
                 conn.close()
@@ -878,18 +1332,79 @@ def manage_user(user_id):
             return jsonify({'success': True, 'message': 'تم تحديث المستخدم بنجاح'})
         
         elif request.method == 'DELETE':
-            # حذف المستخدم (تعطيل بدلاً من الحذف الفعلي)
+            # حذف أو تعطيل المستخدم
+            action = request.args.get('action', 'disable')  # disable أو delete
             current_user = get_current_user()
+            
             if current_user['id'] == user_id:
                 conn.close()
-                return jsonify({'success': False, 'error': 'لا يمكن حذف حسابك الخاص'})
+                return jsonify({'success': False, 'error': 'لا يمكن حذف أو تعطيل حسابك الخاص'})
             
-            conn.execute('UPDATE users SET is_active = 0 WHERE id = ?', (user_id,))
-            conn.commit()
-            conn.close()
+            # التحقق من أن المستخدم ليس مالك النظام
+            user_to_manage = conn.execute('SELECT role FROM users WHERE id = ?', (user_id,)).fetchone()
+            if user_to_manage and user_to_manage['role'] == 'owner':
+                conn.close()
+                return jsonify({'success': False, 'error': 'لا يمكن حذف أو تعطيل مالك النظام'})
             
-            return jsonify({'success': True, 'message': 'تم تعطيل المستخدم بنجاح'})
+            if action == 'disable':
+                # تعطيل المستخدم
+                conn.execute('UPDATE users SET is_active = 0 WHERE id = ?', (user_id,))
+                conn.commit()
+                conn.close()
+                return jsonify({'success': True, 'message': 'تم تعطيل المستخدم بنجاح'})
+            
+            elif action == 'delete':
+                # حذف نهائي - حذف السجلات المرتبطة أولاً
+                try:
+                    # حذف جلسات المستخدم
+                    conn.execute('DELETE FROM user_sessions WHERE user_id = ?', (user_id,))
+                    
+                    # تحديث scan_results لإزالة المرجع للمستخدم المحذوف
+                    conn.execute('UPDATE scan_results SET user_id = NULL WHERE user_id = ?', (user_id,))
+                    
+                    # حذف المستخدم نهائياً
+                    conn.execute('DELETE FROM users WHERE id = ?', (user_id,))
+                    
+                    conn.commit()
+                    conn.close()
+                    return jsonify({'success': True, 'message': 'تم حذف المستخدم نهائياً'})
+                    
+                except Exception as e:
+                    conn.rollback()
+                    conn.close()
+                    return jsonify({'success': False, 'error': f'خطأ في الحذف: {str(e)}'})
+            
+            else:
+                conn.close()
+                return jsonify({'success': False, 'error': 'عملية غير صحيحة'})
     
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/users/<int:user_id>/activate', methods=['POST'])
+@admin_required
+def activate_user(user_id):
+    """إعادة تفعيل مستخدم معطل"""
+    try:
+        conn = get_db_connection()
+        
+        # التحقق من وجود المستخدم
+        user = conn.execute('SELECT id, username, is_active FROM users WHERE id = ?', (user_id,)).fetchone()
+        if not user:
+            conn.close()
+            return jsonify({'success': False, 'error': 'المستخدم غير موجود'})
+        
+        if user['is_active']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'المستخدم نشط بالفعل'})
+        
+        # إعادة تفعيل المستخدم
+        conn.execute('UPDATE users SET is_active = 1 WHERE id = ?', (user_id,))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': f'تم إعادة تفعيل المستخدم "{user["username"]}" بنجاح'})
+        
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -904,10 +1419,10 @@ def manage_profile():
         if request.method == 'GET':
             # الحصول على تفاصيل الملف الشخصي
             profile = conn.execute('''
-                SELECT id, username, email, role, created_at, last_login,
-                       (SELECT COUNT(*) FROM scan_results WHERE user_id = ?) as scan_count
-                FROM users WHERE id = ?
-            ''', (user['id'], user['id'])).fetchone()
+                SELECT u.id, u.username, u.email, u.role, u.created_at, u.last_login,
+                       COALESCE((SELECT COUNT(*) FROM scan_results sr WHERE sr.user_id = u.id), 0) as scan_count
+                FROM users u WHERE u.id = ?
+            ''', (user['id'],)).fetchone()
             
             conn.close()
             return jsonify({'success': True, 'profile': dict(profile)})
