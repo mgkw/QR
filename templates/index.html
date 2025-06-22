@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>قارئ الباركود المتطور</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- jsQR for QR Code scanning -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"></script>
+    
+    <!-- Quagga JS for barcode scanning -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+    
+    <!-- Advanced Scanner CSS -->
+    <link rel="stylesheet" href="/static/css/advanced-scanner.css">
+    
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+        }
+
+        .main-container {
+            padding: 20px 0;
+        }
+
+        .header-section {
+            background: rgba(255,255,255,0.95);
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .user-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .welcome-text h1 {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 0;
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+
+        .welcome-text p {
+            color: #666;
+            margin: 0;
+            font-size: 1.1rem;
+        }
+
+        .user-badge {
+            background: linear-gradient(135deg, #28a745, #20c997);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .quick-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border-radius: 15px;
+            padding: 15px;
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+        }
+
+        .stat-card .icon {
+            font-size: 2rem;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-card .number {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .stat-card .label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .navigation-section {
+            background: rgba(255,255,255,0.95);
+            border-radius: 20px;
+            padding: 20px;
+            margin-top: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .nav-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .nav-btn {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 15px 20px;
+            border: none;
+            border-radius: 15px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            text-align: center;
+            justify-content: center;
+        }
+
+        .nav-btn.primary {
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            color: white;
+        }
+
+        .nav-btn.success {
+            background: linear-gradient(135deg, #28a745, #20c997);
+            color: white;
+        }
+
+        .nav-btn.info {
+            background: linear-gradient(135deg, #17a2b8, #138496);
+            color: white;
+        }
+
+        .nav-btn.warning {
+            background: linear-gradient(135deg, #ffc107, #e0a800);
+            color: #212529;
+        }
+
+        .nav-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+            text-decoration: none;
+        }
+
+        .footer-info {
+            text-align: center;
+            margin-top: 30px;
+            color: rgba(255,255,255,0.8);
+        }
+
+        /* تحسينات للهواتف */
+        @media (max-width: 768px) {
+            .user-info {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+
+            .welcome-text h1 {
+                font-size: 2rem;
+            }
+
+            .quick-stats {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .nav-buttons {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* تأثيرات متحركة */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header-section, .navigation-section, .advanced-scanner-container {
+            animation: fadeInUp 0.6s ease-out;
+        }
+
+        .navigation-section {
+            animation-delay: 0.2s;
+        }
+    </style>
+</head>
+<body>
+    <div class="container main-container">
+        <!-- Header Section -->
+        <div class="header-section">
+            <div class="user-info">
+                <div class="welcome-text">
+                    <h1><i class="fas fa-qrcode"></i> قارئ الباركود المتطور</h1>
+                    <p>مرحباً {{ user.username }}, نظام مسح متقدم بدقة عالية</p>
+                </div>
+                <div class="user-badge">
+                    <i class="fas fa-user-crown"></i>
+                    {{ user.role|title }}
+                </div>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="quick-stats" id="quick-stats">
+                <div class="stat-card">
+                    <div class="icon"><i class="fas fa-eye"></i></div>
+                    <div class="number" id="total-scans">-</div>
+                    <div class="label">إجمالي المسح</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon"><i class="fas fa-check"></i></div>
+                    <div class="number" id="today-scans">-</div>
+                    <div class="label">مسح اليوم</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon"><i class="fas fa-paper-plane"></i></div>
+                    <div class="number" id="telegram-sent">-</div>
+                    <div class="label">تم الإرسال</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon"><i class="fas fa-bullseye"></i></div>
+                    <div class="number" id="accuracy">100%</div>
+                    <div class="label">معدل النجاح</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Advanced Scanner -->
+        <div id="scanner-area">
+            <!-- سيتم تحميل الماسح المتقدم هنا -->
+        </div>
+
+        <!-- Navigation Section -->
+        <div class="navigation-section">
+            <h4 class="mb-3"><i class="fas fa-compass"></i> أقسام النظام</h4>
+            <div class="nav-buttons">
+                <a href="/dashboard" class="nav-btn primary">
+                    <i class="fas fa-chart-pie"></i>
+                    لوحة التحكم
+                </a>
+                
+                <a href="/settings" class="nav-btn success">
+                    <i class="fas fa-cog"></i>
+                    الإعدادات
+                </a>
+                
+                {% if user.role in ['owner', 'admin'] %}
+                <a href="/admin" class="nav-btn warning">
+                    <i class="fas fa-users-cog"></i>
+                    إدارة المستخدمين
+                </a>
+                {% endif %}
+                
+                <a href="/diagnostics" class="nav-btn info">
+                    <i class="fas fa-stethoscope"></i>
+                    تشخيص النظام
+                </a>
+                
+                <a href="/logout" class="nav-btn" style="background: linear-gradient(135deg, #dc3545, #c82333); color: white;">
+                    <i class="fas fa-sign-out-alt"></i>
+                    تسجيل الخروج
+                </a>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer-info">
+            <p><i class="fas fa-code"></i> نظام قارئ الباركود المتطور | تصميم حديث ودقة عالية</p>
+            <p><i class="fas fa-clock"></i> <span id="current-time"></span></p>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Advanced Scanner JS -->
+    <script src="/static/js/advanced-scanner.js"></script>
+
+    <script>
+        // تحديث الوقت
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('current-time').textContent = now.toLocaleString('ar-SA');
+        }
+        updateTime();
+        setInterval(updateTime, 1000);
+
+        // تحميل الإحصائيات
+        async function loadQuickStats() {
+            try {
+                const response = await fetch('/api/statistics');
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('total-scans').textContent = data.general.total_scans || 0;
+                    document.getElementById('today-scans').textContent = data.today.today_scans || 0;
+                    document.getElementById('telegram-sent').textContent = data.general.telegram_sent || 0;
+                    
+                    // حساب معدل النجاح
+                    const accuracy = data.general.total_scans > 0 ? 
+                        Math.round((data.general.telegram_sent / data.general.total_scans) * 100) : 100;
+                    document.getElementById('accuracy').textContent = accuracy + '%';
+                }
+            } catch (error) {
+                console.error('خطأ في تحميل الإحصائيات:', error);
+            }
+        }
+
+        // تحميل الإحصائيات عند بدء الصفحة
+        loadQuickStats();
+        
+        // تحديث الإحصائيات كل 30 ثانية
+        setInterval(loadQuickStats, 30000);
+
+        // إضافة أصوات للتفاعل
+        function playClickSound() {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.value = 800;
+                gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+                
+                oscillator.start();
+                oscillator.stop(audioContext.currentTime + 0.1);
+            } catch (error) {
+                // تجاهل أخطاء الصوت
+            }
+        }
+
+        // إضافة صوت للأزرار
+        document.querySelectorAll('.nav-btn, .btn-control').forEach(btn => {
+            btn.addEventListener('click', playClickSound);
+        });
+
+        // تأثيرات بصرية للإحصائيات
+        function animateStats() {
+            const statCards = document.querySelectorAll('.stat-card');
+            statCards.forEach((card, index) => {
+                setTimeout(() => {
+                    card.style.transform = 'scale(1.05)';
+                    setTimeout(() => {
+                        card.style.transform = 'scale(1)';
+                    }, 200);
+                }, index * 100);
+            });
+        }
+
+        // تشغيل التأثير عند التحديث
+        setInterval(animateStats, 10000);
+
+        // مراقبة حالة الاتصال
+        function checkConnection() {
+            const indicator = document.createElement('div');
+            indicator.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 20px;
+                padding: 10px 15px;
+                border-radius: 25px;
+                color: white;
+                font-weight: 600;
+                z-index: 1000;
+                transition: all 0.3s ease;
+            `;
+
+            if (navigator.onLine) {
+                indicator.style.background = 'linear-gradient(135deg, #28a745, #20c997)';
+                indicator.innerHTML = '<i class="fas fa-wifi"></i> متصل';
+            } else {
+                indicator.style.background = 'linear-gradient(135deg, #dc3545, #c82333)';
+                indicator.innerHTML = '<i class="fas fa-wifi-slash"></i> غير متصل';
+            }
+
+            document.body.appendChild(indicator);
+            setTimeout(() => indicator.remove(), 3000);
+        }
+
+        window.addEventListener('online', checkConnection);
+        window.addEventListener('offline', checkConnection);
+
+        // رسالة ترحيب متحركة
+        function showWelcomeMessage() {
+            const toast = document.createElement('div');
+            toast.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+            toast.innerHTML = `
+                <div class="toast show" role="alert">
+                    <div class="toast-header">
+                        <i class="fas fa-rocket text-primary me-2"></i>
+                        <strong class="me-auto">مرحباً بك!</strong>
+                        <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+                    </div>
+                    <div class="toast-body">
+                        نظام المسح المتقدم جاهز للاستخدام. استمتع بالدقة العالية والسرعة الفائقة!
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 5000);
+        }
+
+        // عرض الرسالة بعد ثانيتين
+        setTimeout(showWelcomeMessage, 2000);
+    </script>
+</body>
+</html>
