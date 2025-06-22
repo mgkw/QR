@@ -202,10 +202,36 @@ def init_database():
     conn.close()
 
 def get_db_connection():
-    """الحصول على اتصال قاعدة البيانات"""
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """الحصول على اتصال قاعدة البيانات مع التأكد من وجود الجداول"""
+    try:
+        conn = sqlite3.connect(DATABASE)
+        conn.row_factory = sqlite3.Row
+        
+        # التحقق من وجود جدول users - إذا لم يكن موجوداً، أنشئ قاعدة البيانات
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT COUNT(*) FROM users LIMIT 1")
+        except sqlite3.OperationalError as e:
+            if "no such table" in str(e).lower():
+                print("🔧 جدول المستخدمين غير موجود - بدء إنشاء قاعدة البيانات...")
+                conn.close()
+                init_database()
+                # إعادة الاتصال بعد إنشاء الجداول
+                conn = sqlite3.connect(DATABASE)
+                conn.row_factory = sqlite3.Row
+        
+        return conn
+    except Exception as e:
+        print(f"❌ خطأ في الاتصال بقاعدة البيانات: {e}")
+        # محاولة إنشاء قاعدة البيانات في حالة الخطأ
+        try:
+            init_database()
+            conn = sqlite3.connect(DATABASE)
+            conn.row_factory = sqlite3.Row
+            return conn
+        except Exception as init_error:
+            print(f"❌ فشل في إنشاء قاعدة البيانات: {init_error}")
+            raise init_error
 
 def get_setting(key, default=None):
     """الحصول على إعداد من قاعدة البيانات"""
@@ -791,7 +817,6 @@ def save_scan_result():
                         
                 except Exception as telegram_error:
                     last_error = f"خطأ في المحاولة {attempt}: {str(telegram_error)}"
-                    print(last_error)
                 
                 if attempt < max_retries:
                     time.sleep(attempt * 2)
@@ -1663,6 +1688,150 @@ def debug_info():
         'path': sys.path[:3],
         'status': 'Python Flask App Running Successfully! 🐍✅'
     })
+
+@app.route('/api/init-database', methods=['POST'])
+def init_database_endpoint():
+    """Endpoint لإنشاء قاعدة البيانات يدوياً - مفيد لخادم Render"""
+    try:
+        print("🔧 بدء إنشاء قاعدة البيانات من خلال API...")
+        init_database()
+        
+        # التحقق من نجاح الإنشاء
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
+        
+        # فحص الجداول المنشأة
+        tables = cursor.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()
+        table_names = [table[0] for table in tables]
+        
+        # فحص عدد المستخدمين
+        user_count = 0
+        if 'users' in table_names:
+            user_count = cursor.execute("SELECT COUNT(*) as count FROM users").fetchone()[0]
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'تم إنشاء قاعدة البيانات بنجاح',
+            'tables_created': table_names,
+            'users_count': user_count,
+            'database_path': DATABASE
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'فشل في إنشاء قاعدة البيانات: {str(e)}'
+        })
+
+@app.route('/api/force-init', methods=['GET'])
+def force_init_database():
+    """Force database initialization - يمكن استدعاؤه من المتصفح مباشرة"""
+    try:
+        print("🔧 إجبار إنشاء قاعدة البيانات...")
+        
+        # حذف قاعدة البيانات الموجودة وإعادة إنشائها
+        if os.path.exists(DATABASE):
+            print(f"🗑️ حذف قاعدة البيانات القديمة: {DATABASE}")
+            os.remove(DATABASE)
+        
+        # إنشاء قاعدة البيانات من جديد
+        init_database()
+        
+        # التحقق من النتائج
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
+        
+        tables = cursor.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()
+        table_names = [table[0] for table in tables]
+        
+        # إحصائيات
+        stats = {}
+        for table in table_names:
+            try:
+                count = cursor.execute(f"SELECT COUNT(*) as count FROM {table}").fetchone()[0]
+                stats[table] = count
+            except:
+                stats[table] = 'خطأ في العد'
+        
+        conn.close()
+        
+        html_response = f"""
+        <!DOCTYPE html>
+        <html dir="rtl">
+        <head>
+            <meta charset="UTF-8">
+            <title>تهيئة قاعدة البيانات</title>
+            <style>
+                body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background: #f5f5f5; }}
+                .container {{ background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                .success {{ color: #28a745; }}
+                .info {{ background: #e9ecef; padding: 15px; border-radius: 5px; margin: 10px 0; }}
+                .table-list {{ margin: 15px 0; }}
+                .table-item {{ padding: 8px; background: #f8f9fa; margin: 5px 0; border-radius: 3px; }}
+                .button {{ background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 10px 5px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1 class="success">✅ تم إنشاء قاعدة البيانات بنجاح!</h1>
+                
+                <div class="info">
+                    <h3>📊 الجداول المنشأة:</h3>
+                    <div class="table-list">
+                        {''.join([f'<div class="table-item">📋 {table}: {stats.get(table, 0)} سجل</div>' for table in table_names])}
+                    </div>
+                </div>
+                
+                <div class="info">
+                    <h3>ℹ️ معلومات النظام:</h3>
+                    <p><strong>مسار قاعدة البيانات:</strong> {DATABASE}</p>
+                    <p><strong>عدد الجداول:</strong> {len(table_names)}</p>
+                    <p><strong>حالة النظام:</strong> جاهز للاستخدام</p>
+                </div>
+                
+                <div>
+                    <a href="/login" class="button">🔐 تسجيل الدخول</a>
+                    <a href="/" class="button">🏠 الصفحة الرئيسية</a>
+                    <a href="/api/debug/info" class="button">🔍 معلومات النظام</a>
+                </div>
+                
+                <div class="info">
+                    <h4>🔑 بيانات المدير الافتراضي:</h4>
+                    <p><strong>اسم المستخدم:</strong> admin</p>
+                    <p><strong>كلمة المرور:</strong> admin123</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        return html_response
+        
+    except Exception as e:
+        error_html = f"""
+        <!DOCTYPE html>
+        <html dir="rtl">
+        <head>
+            <meta charset="UTF-8">
+            <title>خطأ في التهيئة</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }}
+                .container {{ background: white; padding: 30px; border-radius: 10px; }}
+                .error {{ color: #dc3545; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1 class="error">❌ فشل في إنشاء قاعدة البيانات</h1>
+                <p><strong>الخطأ:</strong> {str(e)}</p>
+                <a href="/api/force-init">🔄 إعادة المحاولة</a>
+            </div>
+        </body>
+        </html>
+        """
+        return error_html
 
 if __name__ == '__main__':
     print("🐍 Starting Python Flask QR Scanner...")
