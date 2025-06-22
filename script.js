@@ -152,18 +152,123 @@ rememberMeCheckbox.addEventListener('change', function() {
 
 // Initialize App
 async function initApp() {
-    console.log('Initializing Barcode Scanner App...');
+    console.log('🚀 تهيئة تطبيق قارئ الباركود المتطور...');
     
-    // Check if all required libraries are loaded
+    // التحقق من حالة المكتبات المطلوبة
     checkLibrariesStatus();
     
+    // انتظار تحميل قاعدة البيانات المركزية
+    await waitForCentralDatabase();
+    
+    // تحميل بيانات المستخدم والجلسة
     await loadUserSession();
     await loadRegisteredUsers();
     loadSettings();
+    
+    // تحديث واجهة المستخدم
     updateUI();
+    
+    // تحميل النتائج من قاعدة البيانات المركزية
     await loadResults();
     
-    console.log('App initialization complete');
+    // بدء مراقبة حالة الاتصال
+    monitorConnectionStatus();
+    
+    console.log('✅ تم تهيئة التطبيق بنجاح مع قاعدة البيانات المركزية');
+}
+
+// انتظار تحميل قاعدة البيانات المركزية
+async function waitForCentralDatabase() {
+    let attempts = 0;
+    const maxAttempts = 50; // 5 ثوان
+    
+    while (attempts < maxAttempts) {
+        if (window.centralDB) {
+            console.log('✅ قاعدة البيانات المركزية جاهزة');
+            return;
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+    }
+    
+    console.warn('⚠️ تحذير: لم يتم تحميل قاعدة البيانات المركزية - سيتم استخدام التخزين المحلي');
+    showAlert('تحذير: سيتم استخدام التخزين المحلي فقط', 'warning');
+    
+    // إنشاء قاعدة بيانات محلية بديلة
+    window.centralDB = createFallbackDatabase();
+}
+
+// قاعدة بيانات بديلة محلية
+function createFallbackDatabase() {
+    return {
+        async saveScan(scanData) {
+            try {
+                const scans = JSON.parse(localStorage.getItem('local_scans') || '[]');
+                const scan = {
+                    id: Date.now().toString(36) + Math.random().toString(36).substr(2),
+                    barcode: scanData.code,
+                    codeType: scanData.codeType,
+                    user: scanData.user,
+                    timestamp: new Date().toISOString(),
+                    image: scanData.image,
+                    telegramStatus: 'pending',
+                    telegramAttempts: 0,
+                    isDuplicate: scanData.isDuplicate || false,
+                    duplicateCount: scanData.duplicateCount || 1
+                };
+                
+                scans.unshift(scan);
+                localStorage.setItem('local_scans', JSON.stringify(scans));
+                
+                return { success: true, scan, id: scan.id };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        },
+        
+        async loadScans(limit = 100) {
+            try {
+                const scans = JSON.parse(localStorage.getItem('local_scans') || '[]');
+                return { success: true, scans: scans.slice(0, limit), isOffline: true };
+            } catch (error) {
+                return { success: false, scans: [], error: error.message };
+            }
+        },
+        
+        watchScans() { return null; },
+        unwatchScans() {},
+        isConnected() { return false; }
+    };
+}
+
+// مراقبة حالة الاتصال
+function monitorConnectionStatus() {
+    // التحقق من حالة الاتصال كل 30 ثانية
+    setInterval(() => {
+        if (window.centralDB && window.centralDB.isConnected) {
+            const isConnected = window.centralDB.isConnected();
+            showDatabaseStatus(isConnected ? 'connected' : 'offline');
+        }
+    }, 30000);
+    
+    // مراقبة أحداث الاتصال والانقطاع
+    window.addEventListener('online', () => {
+        console.log('🌐 تم استعادة الاتصال بالإنترنت');
+        showDatabaseStatus('syncing');
+        
+        setTimeout(() => {
+            if (window.centralDB && window.centralDB.syncOfflineData) {
+                window.centralDB.syncOfflineData();
+            }
+        }, 1000);
+    });
+    
+    window.addEventListener('offline', () => {
+        console.log('📵 انقطع الاتصال بالإنترنت - سيتم الحفظ محلياً');
+        showDatabaseStatus('offline');
+        showAlert('انقطع الاتصال - سيتم الحفظ محلياً والمزامنة لاحقاً', 'warning');
+    });
 }
 
 // Check libraries status
@@ -2513,77 +2618,203 @@ function getTelegramButtonText(status) {
 }
 
 async function saveResults() {
-    // Save the latest result to the database via API
-    const latestResult = scannedResults[0]; // First item is the latest due to unshift
+    // حفظ النتيجة الأخيرة في قاعدة البيانات المركزية
+    const latestResult = scannedResults[0]; // أحدث نتيجة
     if (latestResult && !latestResult.saved) {
         try {
-            const response = await fetch('/api/scan', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    barcode: latestResult.code,
-                    code_type: latestResult.codeType,
-                    user_id: currentUser.id || 1,
-                    username: latestResult.user,
-                    image_data: latestResult.image,
-                    notes: latestResult.isDuplicate ? `مكرر ×${latestResult.duplicateCount}` : 'جديد'
-                })
+            // استخدام قاعدة البيانات المركزية الجديدة
+            const result = await window.centralDB.saveScan({
+                code: latestResult.code,
+                codeType: latestResult.codeType,
+                user: latestResult.user,
+                image: latestResult.image,
+                isDuplicate: latestResult.isDuplicate,
+                duplicateCount: latestResult.duplicateCount,
+                telegramStatus: latestResult.telegramStatus,
+                telegramAttempts: latestResult.telegramAttempts
             });
             
-            const data = await response.json();
-            
-            if (data.success) {
-                // Mark as saved and update ID
+            if (result.success) {
+                // تحديث المعرف المحلي
                 latestResult.saved = true;
-                latestResult.id = data.scan.id.toString();
-                console.log('✅ تم حفظ النتيجة في قاعدة البيانات:', latestResult.code);
+                latestResult.id = result.id;
+                console.log('✅ تم حفظ النتيجة في قاعدة البيانات المركزية:', latestResult.code);
+                
+                // إظهار حالة الاتصال
+                showDatabaseStatus('connected');
             } else {
-                console.error('❌ فشل حفظ النتيجة:', data.message);
-                showAlert('خطأ في حفظ النتيجة في قاعدة البيانات', 'error');
+                console.error('❌ فشل حفظ النتيجة:', result.error);
+                showAlert('تم حفظ النتيجة محلياً - سيتم المزامنة لاحقاً', 'warning');
+                showDatabaseStatus('offline');
             }
         } catch (error) {
             console.error('خطأ في حفظ النتيجة:', error);
-            showAlert('خطأ في الاتصال بقاعدة البيانات', 'error');
+            showAlert('تم حفظ النتيجة محلياً - سيتم المزامنة لاحقاً', 'warning');
+            showDatabaseStatus('error');
         }
     }
 }
 
+// إظهار حالة قاعدة البيانات
+function showDatabaseStatus(status) {
+    const statusIndicator = document.querySelector('.database-status') || createDatabaseStatusIndicator();
+    
+    statusIndicator.className = `database-status ${status}`;
+    
+    switch (status) {
+        case 'connected':
+            statusIndicator.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> متصل';
+            statusIndicator.title = 'متصل بقاعدة البيانات المركزية';
+            break;
+        case 'offline':
+            statusIndicator.innerHTML = '<i class="fas fa-cloud-download-alt"></i> غير متصل';
+            statusIndicator.title = 'غير متصل - يتم الحفظ محلياً';
+            break;
+        case 'error':
+            statusIndicator.innerHTML = '<i class="fas fa-exclamation-triangle"></i> خطأ';
+            statusIndicator.title = 'خطأ في الاتصال بقاعدة البيانات';
+            break;
+        case 'syncing':
+            statusIndicator.innerHTML = '<i class="fas fa-sync fa-spin"></i> مزامنة';
+            statusIndicator.title = 'جاري المزامنة مع قاعدة البيانات';
+            break;
+    }
+}
+
+// إنشاء مؤشر حالة قاعدة البيانات
+function createDatabaseStatusIndicator() {
+    const indicator = document.createElement('div');
+    indicator.className = 'database-status';
+    indicator.style.cssText = `
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        background: rgba(0,0,0,0.8);
+        color: white;
+        padding: 5px 10px;
+        border-radius: 15px;
+        font-size: 12px;
+        z-index: 9999;
+        transition: all 0.3s ease;
+    `;
+    
+    document.body.appendChild(indicator);
+    return indicator;
+}
+
 async function loadResults() {
     try {
-        const response = await fetch('/api/scans?limit=100');
-        const data = await response.json();
+        showDatabaseStatus('syncing');
         
-        if (data.success && data.scans) {
-            scannedResults = data.scans.map(scan => ({
+        // تحميل النتائج من قاعدة البيانات المركزية
+        const result = await window.centralDB.loadScans(100, currentUser ? currentUser.username : null);
+        
+        if (result.success) {
+            scannedResults = result.scans.map(scan => ({
                 id: scan.id,
                 code: scan.barcode,
-                codeType: scan.code_type,
-                user: scan.username,
-                timestamp: scan.scan_time,
-                image: scan.image_data || '',
-                telegramStatus: scan.telegram_sent === 1 ? 'success' : 'pending',
-                telegramAttempts: scan.telegram_attempts || 0
+                codeType: scan.codeType,
+                user: scan.user,
+                timestamp: scan.timestamp,
+                image: scan.imageUrl || scan.image || '',
+                telegramStatus: scan.telegramStatus || 'pending',
+                telegramAttempts: scan.telegramAttempts || 0,
+                isDuplicate: scan.isDuplicate || false,
+                duplicateCount: scan.duplicateCount || 1
             }));
             
-            // Clear the results list first
+            // مسح قائمة النتائج أولاً
             resultsList.innerHTML = '';
             
-            // Display results in reverse order (newest first)
-            scannedResults.slice().reverse().forEach(result => {
+            // عرض النتائج (الأحدث أولاً)
+            scannedResults.forEach(result => {
                 displayResultFromLoad(result);
             });
             
-            // Update all duplicate indicators after loading
+            // تحديث مؤشرات التكرار
             updateAllDuplicateIndicators();
             
-            // Resume failed auto-sends if auto-send is enabled
+            // إعادة المحاولات الفاشلة للإرسال للتليجرام
             await resumeFailedSends();
+            
+            // إظهار حالة الاتصال
+            showDatabaseStatus(result.isOffline ? 'offline' : 'connected');
+            
+            console.log(`✅ تم تحميل ${scannedResults.length} نتيجة من قاعدة البيانات ${result.isOffline ? 'المحلية' : 'المركزية'}`);
+            
+            // بدء مراقبة النتائج الجديدة في الوقت الفعلي
+            if (!result.isOffline) {
+                startRealtimeSync();
+            }
+            
+        } else {
+            console.error('خطأ في تحميل النتائج:', result.error);
+            scannedResults = [];
+            showDatabaseStatus('error');
         }
     } catch (error) {
-        console.error('Error loading results:', error);
+        console.error('خطأ في تحميل النتائج:', error);
         scannedResults = [];
+        showDatabaseStatus('error');
+    }
+}
+
+// بدء المزامنة في الوقت الفعلي
+let realtimeListenerId = null;
+
+function startRealtimeSync() {
+    // إيقاف المستمع السابق إن وجد
+    if (realtimeListenerId) {
+        window.centralDB.unwatchScans(realtimeListenerId);
+    }
+    
+    // بدء مراقبة النتائج الجديدة
+    realtimeListenerId = window.centralDB.watchScans((scans) => {
+        // تحديث النتائج المحلية
+        const newScans = scans.filter(scan => 
+            !scannedResults.find(existing => existing.id === scan.id)
+        );
+        
+        if (newScans.length > 0) {
+            newScans.forEach(scan => {
+                const formattedScan = {
+                    id: scan.id,
+                    code: scan.barcode,
+                    codeType: scan.codeType,
+                    user: scan.user,
+                    timestamp: scan.timestamp,
+                    image: scan.imageUrl || scan.image || '',
+                    telegramStatus: scan.telegramStatus || 'pending',
+                    telegramAttempts: scan.telegramAttempts || 0,
+                    isDuplicate: scan.isDuplicate || false,
+                    duplicateCount: scan.duplicateCount || 1
+                };
+                
+                // إضافة للقائمة المحلية
+                scannedResults.unshift(formattedScan);
+                
+                // عرض في الواجهة
+                displayResult(formattedScan);
+                
+                // إشعار بالنتيجة الجديدة إذا لم تكن من المستخدم الحالي
+                if (formattedScan.user !== currentUser?.username) {
+                    showAlert(`مسح جديد من ${formattedScan.user}: ${formattedScan.code}`, 'info');
+                }
+            });
+            
+            // تحديث مؤشرات التكرار
+            updateAllDuplicateIndicators();
+            
+            console.log(`🔄 تم استلام ${newScans.length} نتيجة جديدة من المستخدمين الآخرين`);
+        }
+    }, currentUser ? currentUser.username : null);
+}
+
+// إيقاف المزامنة في الوقت الفعلي
+function stopRealtimeSync() {
+    if (realtimeListenerId) {
+        window.centralDB.unwatchScans(realtimeListenerId);
+        realtimeListenerId = null;
     }
 }
 
@@ -3661,4 +3892,14 @@ setInterval(async () => {
 window.addEventListener('beforeunload', () => {
     removeHighlight();
     recentScans = [];
+    
+    // تنظيف قاعدة البيانات المركزية
+    if (window.centralDB && window.centralDB.cleanup) {
+        window.centralDB.cleanup();
+    }
+    
+    // إيقاف المزامنة في الوقت الفعلي
+    stopRealtimeSync();
+    
+    console.log('🧹 تم تنظيف موارد التطبيق');
 }); 
