@@ -25,6 +25,10 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # إعدادات قاعدة البيانات
 DATABASE = 'qr_scanner.db'
 
+# إعدادات التليجرام الثابتة
+TELEGRAM_BOT_TOKEN = "7668051564:AAFdFqSd0CKrlSOyPKyFwf-xHi791lcsC_U"
+TELEGRAM_CHAT_ID = "-1002439956600"
+
 def init_database():
     """إنشاء قاعدة البيانات والجداول"""
     conn = sqlite3.connect(DATABASE)
@@ -67,10 +71,8 @@ def init_database():
         )
     ''')
     
-    # إدراج الإعدادات الافتراضية
+    # إدراج الإعدادات الافتراضية (بدون إعدادات التليجرام لأنها ثابتة)
     default_settings = [
-        ('telegram_bot_token', ''),
-        ('telegram_chat_id', ''),
         ('scanner_continuous', 'true'),
         ('scanner_sound', 'true'),
         ('scanner_duplicate_delay', '3000'),
@@ -112,8 +114,9 @@ def set_setting(key, value):
 def send_telegram_message(message, image_path=None):
     """إرسال رسالة إلى تليجرام"""
     try:
-        bot_token = get_setting('telegram_bot_token')
-        chat_id = get_setting('telegram_chat_id')
+        # استخدام البيانات الثابتة
+        bot_token = TELEGRAM_BOT_TOKEN
+        chat_id = TELEGRAM_CHAT_ID
         
         if not bot_token or not chat_id:
             return False
@@ -141,6 +144,26 @@ def send_telegram_message(message, image_path=None):
     except Exception as e:
         print(f"خطأ في إرسال تليجرام: {e}")
         return False
+
+def test_telegram_connection():
+    """اختبار الاتصال بالتليجرام"""
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getMe"
+        response = requests.get(url, timeout=10)
+        
+        if response.status_code == 200:
+            bot_info = response.json()
+            if bot_info.get('ok'):
+                return {
+                    'success': True,
+                    'bot_name': bot_info['result'].get('username', 'Unknown'),
+                    'bot_id': bot_info['result'].get('id', 'Unknown')
+                }
+        
+        return {'success': False, 'error': 'فشل في الاتصال بالبوت'}
+        
+    except Exception as e:
+        return {'success': False, 'error': f'خطأ في الاتصال: {str(e)}'}
 
 def update_statistics():
     """تحديث الإحصائيات اليومية"""
@@ -419,6 +442,23 @@ def dashboard():
 def settings_page():
     """صفحة الإعدادات"""
     return render_template('settings.html')
+
+@app.route('/api/telegram/test')
+def test_telegram():
+    """اختبار الاتصال بالتليجرام"""
+    result = test_telegram_connection()
+    return jsonify(result)
+
+@app.route('/api/telegram/info')
+def telegram_info():
+    """معلومات إعدادات التليجرام"""
+    return jsonify({
+        'success': True,
+        'chat_id': TELEGRAM_CHAT_ID,
+        'bot_token_preview': TELEGRAM_BOT_TOKEN[:10] + "..." + TELEGRAM_BOT_TOKEN[-10:],
+        'status': 'ثابت - مُعد مسبقاً',
+        'test_available': True
+    })
 
 @app.route('/api/debug/info')
 def debug_info():
