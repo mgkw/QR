@@ -1,58 +1,75 @@
-import os
-import cherrypy
+from flask import Flask, render_template_string, request, jsonify
 import database
-import json
+import os
 
-class BarcodeScannerApp:
-    @cherrypy.expose
-    def index(self):
-        """عرض الصفحة الرئيسية"""
-        return open("templates/index.html", encoding="utf-8").read()
+app = Flask(__name__)
 
-    @cherrypy.expose
-    def scan(self):
-        """عرض صفحة المسح"""
-        return open("templates/scan.html", encoding="utf-8").read()
+# قراءة محتوى index.html
+def get_index_html():
+    try:
+        with open('index.html', 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        return '''<!DOCTYPE html>
+<html>
+<head><title>Error</title></head>
+<body><h1>index.html not found</h1></body>
+</html>'''
 
-    @cherrypy.expose
-    def get_scanned_barcodes(self):
-        """جلب جميع بيانات الباركودات المخزنة في قاعدة البيانات"""
-        try:
-            barcodes = database.fetch_all_barcodes()
-            return json.dumps(barcodes)
-        except Exception as e:
-            cherrypy.log(f"❌ خطأ في استرجاع الباركودات: {str(e)}")
-            return json.dumps({"error": "❌ خطأ في استرجاع البيانات"})
+@app.route('/')
+def index():
+    """عرض الصفحة الرئيسية"""
+    return get_index_html()
 
-    @cherrypy.expose
-    @cherrypy.tools.json_in()
-    def update_barcode(self):
-        """تحديث بيانات الباركود عند مسحه"""
-        data = cherrypy.request.json
+@app.route('/scan')
+def scan():
+    """عرض صفحة المسح"""
+    try:
+        with open('templates/scan.html', 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        return get_index_html()
+
+@app.route('/get_scanned_barcodes', methods=['GET'])
+@app.route('/get_barcodes', methods=['GET'])
+def get_scanned_barcodes():
+    """جلب جميع بيانات الباركودات المخزنة في قاعدة البيانات"""
+    try:
+        barcodes = database.fetch_all_barcodes()
+        return jsonify(barcodes)
+    except Exception as e:
+        app.logger.error(f"❌ خطأ في استرجاع الباركودات: {str(e)}")
+        return jsonify({"error": "❌ خطأ في استرجاع البيانات"}), 500
+
+@app.route('/update_barcode', methods=['POST'])
+@app.route('/add_barcode', methods=['POST'])
+def update_barcode():
+    """تحديث بيانات الباركود عند مسحه"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "❌ لا توجد بيانات"}), 400
+            
         barcode = data.get("barcode")
-        status = data.get("status")
+        status = data.get("status", "✅")
         scan_time = data.get("time")
 
-        if barcode and status:
+        if barcode:
             database.insert_or_update_barcode(barcode, status, scan_time)
-            return json.dumps({"message": "✅ تم تحديث الباركود"})
-        return json.dumps({"error": "❌ خطأ في التحديث"})
+            return jsonify({"message": "✅ تم تحديث الباركود"})
+        return jsonify({"error": "❌ خطأ في التحديث"}), 400
+    except Exception as e:
+        app.logger.error(f"❌ خطأ في تحديث الباركود: {str(e)}")
+        return jsonify({"error": "❌ خطأ في التحديث"}), 500
+
+# إنشاء قاعدة البيانات عند بدء التطبيق
+with app.app_context():
+    database.create_database()
 
 if __name__ == "__main__":
+    # إنشاء قاعدة البيانات
     database.create_database()
     
-    # تحديد المسار المطلق لمجلد المشروع
-    current_dir = os.path.abspath(os.path.dirname(__file__))
-
-    config = {
-        '/': {
-            'tools.sessions.on': True,
-            'tools.staticdir.root': current_dir,
-        },
-        '/static': {
-            'tools.staticdir.on': True,
-            'tools.staticdir.dir': os.path.join(current_dir, 'static')
-        }
-    }
-    
-    cherrypy.quickstart(BarcodeScannerApp(), "/", config)
+    # تشغيل التطبيق
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False) 
