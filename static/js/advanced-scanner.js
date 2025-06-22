@@ -9,11 +9,24 @@ class AdvancedQRScanner {
         this.scanInterval = null;
         this.lastScannedCode = null;
         this.lastScanTime = 0;
-        this.duplicateDelay = 3000;
+        this.duplicateDelay = 800; // تقليل وقت التكرار لسرعة أكبر
         this.scanResults = new Map();
         this.retryAttempts = 3;
         this.scanCount = 0;
         this.successCount = 0;
+        
+        // نظام طوابير المعالجة المتوازية
+        this.processingQueue = [];
+        this.sendingQueue = [];
+        this.isProcessing = false;
+        this.isSending = false;
+        this.maxConcurrentProcessing = 3;
+        this.processingWorkers = 0;
+        
+        // تحسينات السرعة
+        this.fastProcessing = true;
+        this.backgroundProcessing = true;
+        this.instantSend = true;
         
         this.cameraSettings = {
             video: {
@@ -31,28 +44,51 @@ class AdvancedQRScanner {
                 target: null, // سيتم تحديده لاحقاً بعد إنشاء DOM
                 constraints: this.cameraSettings.video,
                 area: {
-                    top: "20%",
+                    top: "15%",
                     right: "10%", 
                     left: "10%",
-                    bottom: "20%"
+                    bottom: "15%"
                 }
             },
             locator: {
-                patchSize: "medium",
-                halfSample: false
+                patchSize: "large", // تحسين الكشف
+                halfSample: false,
+                showCanvas: true,
+                showPatches: true,
+                showFoundPatches: true,
+                showSkeleton: true,
+                showLabels: true,
+                showPatchLabels: true,
+                showBoundingBox: true
             },
-            numOfWorkers: navigator.hardwareConcurrency || 4,
-            frequency: 10,
+            numOfWorkers: Math.min(navigator.hardwareConcurrency || 4, 6),
+            frequency: 20, // زيادة تردد المسح للسرعة القصوى
             decoder: {
                 readers: [
                     'code_128_reader',
                     'ean_reader', 
                     'ean_8_reader',
+                    'ean_13_reader',
                     'code_39_reader',
+                    'code_39_vin_reader',
                     'codabar_reader',
-                    'upc_reader'
-                ]
-            }
+                    'upc_reader',
+                    'upc_e_reader',
+                    'i2of5_reader',
+                    '2of5_reader',
+                    'code_93_reader'
+                ],
+                multiple: false,
+                debug: false
+            },
+            locate: true,
+            debug: false
+        };
+        
+        // إضافة دعم الباركود المربع (QR)
+        this.qrConfig = {
+            inversionAttempts: "dontInvert",
+            canOverwriteExisting: false
         };
 
         this.init();
@@ -274,6 +310,9 @@ class AdvancedQRScanner {
 
             Quagga.onDetected(this.onDetected.bind(this));
             Quagga.onProcessed(this.onProcessed.bind(this));
+            
+            // بدء مسح QR بالتوازي
+            this.startQRScanning();
 
         } catch (error) {
             console.error('فشل في بدء المسح:', error);
@@ -579,8 +618,199 @@ class AdvancedQRScanner {
             return;
         }
 
+        // عرض فوري للكود المكتشف
         this.displayDetectedCode(code, format, result);
-        this.processNewCode(code, format, result);
+        
+        // إضافة للطابور للمعالجة المتوازية
+        if (this.backgroundProcessing) {
+            this.addToProcessingQueue({
+                code,
+                format,
+                result,
+                timestamp: currentTime,
+                priority: this.getCodePriority(format)
+            });
+        } else {
+            // معالجة تقليدية
+            this.processNewCode(code, format, result);
+        }
+    }
+
+    getCodePriority(format) {
+        // إعطاء أولوية أعلى للباركود المربع والأنواع الحديثة
+        const priorities = {
+            'qr_code': 1,     // أولوية عالية للQR
+            'data_matrix': 1, // أولوية عالية للData Matrix
+            'aztec': 1,       // أولوية عالية للAztec
+            'pdf417': 2,      // أولوية متوسطة-عالية
+            'code_128': 2,    // أولوية متوسطة-عالية
+            'ean_13': 3,      // أولوية متوسطة
+            'ean_8': 3,       // أولوية متوسطة
+            'upc_a': 3,       // أولوية متوسطة
+            'upc_e': 3,       // أولوية متوسطة
+            'code_39': 4,     // أولوية منخفضة-متوسطة
+            'code_93': 4,     // أولوية منخفضة-متوسطة
+            'codabar': 5,     // أولوية منخفضة
+            'i2of5': 5,       // أولوية منخفضة
+            '2of5': 5,        // أولوية منخفضة
+            'default': 6      // أولوية افتراضية
+        };
+        
+        return priorities[format.toLowerCase()] || priorities['default'];
+    }
+
+    addToProcessingQueue(scanData) {
+        // إضافة للطابور مع ترتيب الأولوية
+        this.processingQueue.push(scanData);
+        this.processingQueue.sort((a, b) => a.priority - b.priority);
+        
+        // بدء المعالجة إذا لم تكن بدأت
+        if (!this.isProcessing && this.processingWorkers < this.maxConcurrentProcessing) {
+            this.startQueueProcessor();
+        }
+        
+        // تحديث مؤشر الطابور
+        this.updateQueueStatus();
+    }
+
+    async startQueueProcessor() {
+        if (this.isProcessing) return;
+        
+        this.isProcessing = true;
+        this.processingWorkers++;
+        
+        while (this.processingQueue.length > 0) {
+            const scanData = this.processingQueue.shift();
+            
+            try {
+                await this.processQueueItem(scanData);
+            } catch (error) {
+                console.error('خطأ في معالجة عنصر الطابور:', error);
+            }
+            
+            // تحديث حالة الطابور
+            this.updateQueueStatus();
+            
+            // انتظار قصير لتجنب استنزاف الموارد
+            await this.delay(25); // انتظار أقل للسرعة
+        }
+        
+        this.isProcessing = false;
+        this.processingWorkers--;
+    }
+
+    async processQueueItem(scanData) {
+        const { code, format, result, timestamp } = scanData;
+        
+        // التقاط الصورة بسرعة
+        const imageData = this.captureCodeImage(result);
+        
+        // معالجة فورية ومتوازية
+        if (this.instantSend) {
+            // إضافة للطابور للإرسال الفوري
+            this.addToSendingQueue({
+                code,
+                format,
+                imageData,
+                timestamp,
+                notes: `مسح فوري - ${new Date().toLocaleTimeString('ar-SA')}`
+            });
+        }
+        
+        // تحديث النتائج المحلية
+        this.scanResults.set(code, {
+            format,
+            timestamp,
+            image: imageData
+        });
+        
+        this.lastScannedCode = code;
+        this.lastScanTime = timestamp;
+        
+        // تحديث الإحصائيات والعرض
+        this.addToRecentScans(code, format, 'processing');
+        this.showSuccessFeedback();
+    }
+
+    addToSendingQueue(sendData) {
+        this.sendingQueue.push(sendData);
+        
+        // بدء الإرسال الفوري
+        if (!this.isSending) {
+            this.startSendingProcessor();
+        }
+    }
+
+    async startSendingProcessor() {
+        if (this.isSending) return;
+        
+        this.isSending = true;
+        
+        while (this.sendingQueue.length > 0) {
+            const sendData = this.sendingQueue.shift();
+            
+            try {
+                this.updateScannerStatus(`إرسال ${sendData.code}...`, 'processing');
+                
+                const success = await this.sendToServerInstant(sendData);
+                
+                if (success) {
+                    this.successCount++;
+                    this.addToRecentScans(sendData.code, sendData.format, 'success');
+                } else {
+                    this.addToRecentScans(sendData.code, sendData.format, 'failed');
+                }
+                
+                this.updateStats();
+                
+            } catch (error) {
+                console.error('خطأ في إرسال فوري:', error);
+                this.addToRecentScans(sendData.code, sendData.format, 'error');
+            }
+            
+            // انتظار قصير بين الإرسالات
+            await this.delay(50); // انتظار أقل للإرسال السريع
+        }
+        
+        this.isSending = false;
+        this.updateScannerStatus('جاري المسح...', 'scanning');
+    }
+
+    async sendToServerInstant(sendData) {
+        const { code, format, imageData, notes } = sendData;
+        
+        try {
+            const formData = new FormData();
+            formData.append('code_data', code);
+            formData.append('code_type', format);
+            formData.append('notes', notes);
+            formData.append('instant_send', 'true');
+            
+            if (imageData) {
+                const blob = this.dataURLtoBlob(imageData);
+                formData.append('image', blob, `instant_${Date.now()}.png`);
+            }
+
+            const response = await fetch('/api/scan', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+            return result.success;
+            
+        } catch (error) {
+            console.error('خطأ في الإرسال الفوري:', error);
+            return false;
+        }
+    }
+
+    updateQueueStatus() {
+        const queueSize = this.processingQueue.length + this.sendingQueue.length;
+        
+        if (queueSize > 0) {
+            this.updateScannerStatus(`معالجة ${queueSize} عنصر...`, 'processing');
+        }
     }
 
     onProcessed(result) {
@@ -823,10 +1053,28 @@ class AdvancedQRScanner {
 
     captureCodeImage(result) {
         try {
-            const canvas = Quagga.canvas.dom.image;
-            if (canvas) {
+            // للباركود العادي من Quagga
+            const quaggaCanvas = Quagga.canvas?.dom?.image;
+            if (quaggaCanvas) {
+                return quaggaCanvas.toDataURL('image/png');
+            }
+            
+            // للQR codes من النظام المخصص
+            if (result && result.canvas) {
+                return result.canvas.toDataURL('image/png');
+            }
+            
+            // محاولة أخيرة من video QR
+            const qrVideo = document.getElementById('qr-video');
+            if (qrVideo && qrVideo.readyState === qrVideo.HAVE_ENOUGH_DATA) {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = qrVideo.videoWidth;
+                canvas.height = qrVideo.videoHeight;
+                ctx.drawImage(qrVideo, 0, 0);
                 return canvas.toDataURL('image/png');
             }
+            
         } catch (error) {
             console.error('خطأ في التقاط الصورة:', error);
         }
@@ -1019,6 +1267,213 @@ class AdvancedQRScanner {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+    // دعم مسح QR codes المربعة بالتوازي
+    async startQRScanning() {
+        try {
+            // إنشاء عنصر فيديو مخفي لمسح QR
+            this.createQRVideoElement();
+            
+            // بدء تشغيل الكاميرا للمسح المربع
+            await this.initQRCamera();
+            
+            // بدء مسح QR متكرر
+            this.startQRScanLoop();
+            
+        } catch (error) {
+            console.log('QR scanning غير متاح:', error);
+        }
+    }
+
+    createQRVideoElement() {
+        if (document.getElementById('qr-video')) return;
+        
+        const qrVideo = document.createElement('video');
+        qrVideo.id = 'qr-video';
+        qrVideo.style.position = 'absolute';
+        qrVideo.style.top = '-9999px';
+        qrVideo.style.left = '-9999px';
+        qrVideo.style.width = '320px';
+        qrVideo.style.height = '240px';
+        qrVideo.autoplay = true;
+        qrVideo.playsInline = true;
+        qrVideo.muted = true;
+        
+        document.body.appendChild(qrVideo);
+    }
+
+    async initQRCamera() {
+        try {
+            this.qrVideoStream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: 'environment',
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                }
+            });
+            
+            const qrVideo = document.getElementById('qr-video');
+            if (qrVideo) {
+                qrVideo.srcObject = this.qrVideoStream;
+                await qrVideo.play();
+            }
+            
+        } catch (error) {
+            console.log('فشل في تشغيل كاميرا QR:', error);
+        }
+    }
+
+    startQRScanLoop() {
+        this.qrScanInterval = setInterval(() => {
+            this.scanForQR();
+        }, 150); // مسح QR كل 150ms لسرعة أكبر
+    }
+
+    scanForQR() {
+        const qrVideo = document.getElementById('qr-video');
+        if (!qrVideo || qrVideo.readyState !== qrVideo.HAVE_ENOUGH_DATA) {
+            return;
+        }
+
+        try {
+            // إنشاء canvas لمعالجة الصورة
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            canvas.width = qrVideo.videoWidth;
+            canvas.height = qrVideo.videoHeight;
+            
+            // رسم الفيديو على canvas
+            ctx.drawImage(qrVideo, 0, 0, canvas.width, canvas.height);
+            
+            // محاولة قراءة QR من الصورة
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            
+            // استخدام jsQR إذا كان متاح
+            if (typeof jsQR !== 'undefined') {
+                const qrCode = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: "dontInvert"
+                });
+                
+                if (qrCode && qrCode.data) {
+                    this.handleQRDetection(qrCode, canvas);
+                }
+            } else {
+                // محاولة التحليل اليدوي البسيط للباترن المربع
+                this.detectQRPattern(imageData, canvas);
+            }
+            
+        } catch (error) {
+            // تجاهل الأخطاء البسيطة في مسح QR
+        }
+    }
+
+    handleQRDetection(qrCode, canvas) {
+        const code = qrCode.data;
+        const format = 'QR_CODE';
+        const currentTime = Date.now();
+
+        // فحص التكرار
+        if (this.isDuplicate(code, currentTime)) {
+            return;
+        }
+
+        // إنشاء كائج نتيجة مؤقت للتوافق مع النظام
+        const mockResult = {
+            codeResult: {
+                code: code,
+                format: format
+            },
+            line: qrCode.location,
+            canvas: canvas
+        };
+
+        // عد المسح
+        this.scanCount++;
+        this.updateStats();
+
+        // عرض فوري للكود المكتشف
+        this.displayDetectedCode(code, format, mockResult);
+        
+        // معالجة متوازية مع أولوية عالية للQR
+        if (this.backgroundProcessing) {
+            this.addToProcessingQueue({
+                code,
+                format,
+                result: mockResult,
+                timestamp: currentTime,
+                priority: 1 // أولوية عالية للQR
+            });
+        } else {
+            this.processNewCode(code, format, mockResult);
+        }
+    }
+
+    detectQRPattern(imageData, canvas) {
+        // بحث بسيط عن نمط QR (مربعات في الزوايا)
+        const { width, height, data } = imageData;
+        
+        // البحث عن أنماط مربعة في الزوايا
+        const corners = [
+            { x: Math.floor(width * 0.15), y: Math.floor(height * 0.15) },
+            { x: Math.floor(width * 0.85), y: Math.floor(height * 0.15) },
+            { x: Math.floor(width * 0.15), y: Math.floor(height * 0.85) }
+        ];
+
+        let qrLikePattern = 0;
+        
+        corners.forEach(corner => {
+            const brightness = this.getPixelBrightness(data, corner.x, corner.y, width);
+            if (brightness < 100) { // نقطة مظلمة محتملة
+                qrLikePattern++;
+            }
+        });
+
+        // إذا وجدنا 2 أو أكثر من الزوايا المظلمة، قد يكون QR
+        if (qrLikePattern >= 2) {
+            console.log('QR pattern detected but jsQR library needed for decoding');
+        }
+    }
+
+    getPixelBrightness(data, x, y, width) {
+        const index = (y * width + x) * 4;
+        const r = data[index] || 0;
+        const g = data[index + 1] || 0;
+        const b = data[index + 2] || 0;
+        
+        return (r + g + b) / 3;
+    }
+
+    stopScanning() {
+        if (this.isScanning) {
+            Quagga.stop();
+            this.isScanning = false;
+            
+            // إيقاف مسح QR
+            if (this.qrScanInterval) {
+                clearInterval(this.qrScanInterval);
+                this.qrScanInterval = null;
+            }
+            
+            if (this.qrVideoStream) {
+                this.qrVideoStream.getTracks().forEach(track => track.stop());
+                this.qrVideoStream = null;
+            }
+            
+            // إزالة عنصر QR video
+            const qrVideo = document.getElementById('qr-video');
+            if (qrVideo) {
+                qrVideo.remove();
+            }
+            
+            document.getElementById('start-scan').style.display = 'flex';
+            document.getElementById('stop-scan').style.display = 'none';
+            document.getElementById('scanner-guidance').style.display = 'none';
+            document.getElementById('detected-code').style.display = 'none';
+            
+            this.updateScannerStatus('متوقف', 'stopped');
+        }
+    }
+
     destroy() {
         if (this.isScanning) {
             this.stopScanning();
@@ -1026,6 +1481,15 @@ class AdvancedQRScanner {
         
         if (this.statsInterval) {
             clearInterval(this.statsInterval);
+        }
+        
+        // إيقاف مسح QR
+        if (this.qrScanInterval) {
+            clearInterval(this.qrScanInterval);
+        }
+        
+        if (this.qrVideoStream) {
+            this.qrVideoStream.getTracks().forEach(track => track.stop());
         }
         
         Quagga.offDetected();

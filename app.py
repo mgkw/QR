@@ -698,6 +698,7 @@ def save_scan_result():
             code_type = request.form.get('code_type', 'unknown')
             notes = request.form.get('notes', '')
             is_duplicate = request.form.get('is_duplicate', 'false').lower() == 'true'
+            instant_send = request.form.get('instant_send', 'false').lower() == 'true'
         else:
             # بيانات JSON عادية
             data = request.get_json()
@@ -705,6 +706,7 @@ def save_scan_result():
             code_type = data.get('code_type', 'unknown')
             notes = data.get('notes', '')
             is_duplicate = data.get('is_duplicate', False)
+            instant_send = data.get('instant_send', False)
         
         if not code_data:
             return jsonify({'success': False, 'error': 'لا توجد بيانات للحفظ'})
@@ -771,12 +773,27 @@ def save_scan_result():
         conn.close()
         
         # إرسال إلى التليجرام مع نظام إعادة المحاولة المحسن
+        # تحديد أولوية الإرسال بناءً على instant_send
+        max_retries = 1 if instant_send else 3
+        
         if uploaded_images:
             # استخدام الدالة المتقدمة للصور مع إعادة المحاولة
-            telegram_success = send_telegram_with_retry(code_data, code_type, notes, uploaded_images, is_duplicate, 3, result_id)
+            telegram_success = send_telegram_with_retry(code_data, code_type, notes, uploaded_images, is_duplicate, max_retries, result_id)
         else:
-            # إرسال رسالة نصية بسيطة
-            telegram_message = f"""
+            # إرسال رسالة نصية بسيطة مع تحسين للإرسال الفوري
+            if instant_send:
+                telegram_message = f"""
+⚡ <b>مسح فوري</b>
+
+📊 <code>{code_data}</code>
+🏷️ {code_type}
+🕒 {datetime.now().strftime('%H:%M:%S')}
+👤 {user['username']}
+
+{f"📝 {notes}" if notes else ""}
+                """
+            else:
+                telegram_message = f"""
 🔍 <b>نتيجة مسح جديدة</b>
 
 📊 <b>البيانات:</b> <code>{code_data}</code>
@@ -790,10 +807,9 @@ def save_scan_result():
 - المتصفح: {request.user_agent.browser}
 
 {f"📝 <b>ملاحظات:</b> {notes}" if notes else ""}
-            """
+                """
             # إعادة المحاولة للرسائل النصية
             telegram_success = False
-            max_retries = 3
             last_error = ""
             
             for attempt in range(1, max_retries + 1):
@@ -841,8 +857,10 @@ def save_scan_result():
             'telegram_sent': telegram_success,
             'images_saved': len(image_paths),
             'is_duplicate': is_duplicate,
-            'message': 'تم حفظ النتيجة بنجاح',
-            'telegram_attempts': max_retries if not telegram_success else min(max_retries, attempt)
+            'instant_send': instant_send,
+            'message': 'تم حفظ النتيجة بنجاح' + (' - إرسال فوري' if instant_send else ''),
+            'telegram_attempts': max_retries if not telegram_success else min(max_retries, attempt if 'attempt' in locals() else 1),
+            'processing_time': '< 100ms' if instant_send else 'standard'
         })
         
     except Exception as e:
