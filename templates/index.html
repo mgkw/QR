@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>قارئ الباركود المتطور - Python Edition</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+    
+    <style>
+        * { font-family: 'Cairo', sans-serif; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+        .main-container { background: white; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); margin: 20px auto; max-width: 1200px; }
+        .header { background: linear-gradient(135deg, #4CAF50, #2196F3); color: white; padding: 2rem; text-align: center; border-radius: 15px 15px 0 0; }
+        .scanner-container { position: relative; background: #000; border-radius: 15px; overflow: hidden; margin: 2rem; }
+        #scanner { width: 100%; height: 400px; }
+        .controls { padding: 2rem; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+        .btn-custom { border-radius: 50px; padding: 12px 25px; font-weight: 600; border: none; }
+        .btn-start { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; }
+        .btn-stop { background: linear-gradient(135deg, #f44336, #d32f2f); color: white; }
+        .stat-card { background: white; border-radius: 15px; padding: 1.5rem; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.1); margin-bottom: 1rem; }
+        .stat-number { font-size: 2.5rem; font-weight: 700; color: #4CAF50; }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="header">
+            <h1><i class="fas fa-qrcode"></i> قارئ الباركود المتطور</h1>
+            <p>نسخة Python مع قاعدة بيانات SQLite محلية</p>
+        </div>
+
+        <div class="scanner-container">
+            <div id="scanner"></div>
+        </div>
+
+        <div class="controls">
+            <button class="btn btn-custom btn-start" id="startBtn">
+                <i class="fas fa-play"></i> بدء المسح
+            </button>
+            <button class="btn btn-custom btn-stop" id="stopBtn" disabled>
+                <i class="fas fa-stop"></i> إيقاف المسح
+            </button>
+            <button class="btn btn-custom btn-info" onclick="window.open('/dashboard', '_blank')">
+                <i class="fas fa-chart-bar"></i> لوحة التحكم
+            </button>
+            <button class="btn btn-custom btn-secondary" onclick="window.open('/settings', '_blank')">
+                <i class="fas fa-cog"></i> الإعدادات
+            </button>
+        </div>
+
+        <div class="container">
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="stat-card">
+                        <div class="stat-number" id="totalScans">0</div>
+                        <div>إجمالي المسح</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-card">
+                        <div class="stat-number" id="todayScans">0</div>
+                        <div>مسح اليوم</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-card">
+                        <div class="stat-number" id="uniqueCodes">0</div>
+                        <div>أكواد مختلفة</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-card">
+                        <div class="stat-number" id="telegramSent">0</div>
+                        <div>مرسل للتليجرام</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let isScanning = false;
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+
+        const quaggaConfig = {
+            inputStream: {
+                name: "Live",
+                type: "LiveStream",
+                target: document.querySelector('#scanner'),
+                constraints: { width: 800, height: 600, facingMode: "environment" }
+            },
+            locator: { patchSize: "medium", halfSample: true },
+            numOfWorkers: 4,
+            frequency: 10,
+            decoder: {
+                readers: ["code_128_reader", "ean_reader", "code_39_reader", "upc_reader"]
+            }
+        };
+
+        async function startScanning() {
+            try {
+                startBtn.disabled = true;
+                await new Promise((resolve, reject) => {
+                    Quagga.init(quaggaConfig, (err) => {
+                        if (err) reject(err);
+                        else resolve();
+                    });
+                });
+                Quagga.start();
+                isScanning = true;
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+            } catch (error) {
+                console.error('خطأ في بدء المسح:', error);
+                startBtn.disabled = false;
+            }
+        }
+
+        function stopScanning() {
+            if (isScanning) {
+                Quagga.stop();
+                isScanning = false;
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+            }
+        }
+
+        Quagga.onDetected(async (result) => {
+            if (!isScanning) return;
+            const code = result.codeResult.code;
+            const format = result.codeResult.format;
+            await saveScanResult(code, format);
+        });
+
+        async function saveScanResult(code, format) {
+            try {
+                const response = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        code_data: code,
+                        code_type: format,
+                        notes: 'مسح جديد'
+                    })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    alert('تم حفظ الكود: ' + code);
+                    loadStatistics();
+                }
+            } catch (error) {
+                console.error('خطأ في حفظ النتيجة:', error);
+            }
+        }
+
+        async function loadStatistics() {
+            try {
+                const response = await fetch('/api/statistics');
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('totalScans').textContent = data.general.total_scans || 0;
+                    document.getElementById('todayScans').textContent = data.today.today_scans || 0;
+                    document.getElementById('uniqueCodes').textContent = data.general.unique_codes || 0;
+                    document.getElementById('telegramSent').textContent = data.general.telegram_sent || 0;
+                }
+            } catch (error) {
+                console.error('خطأ في تحميل الإحصائيات:', error);
+            }
+        }
+
+        startBtn.addEventListener('click', startScanning);
+        stopBtn.addEventListener('click', stopScanning);
+        document.addEventListener('DOMContentLoaded', loadStatistics);
+    </script>
+</body>
+</html>

@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>الإعدادات - قارئ الباركود المتطور</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        * { font-family: 'Cairo', sans-serif; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+        .navbar { background: linear-gradient(135deg, #4CAF50, #2196F3) !important; }
+        .card { border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); border: none; margin-bottom: 2rem; }
+        .card-header { background: linear-gradient(135deg, #4CAF50, #2196F3); color: white; border-radius: 15px 15px 0 0 !important; }
+        .form-control, .form-select { border-radius: 10px; border: 2px solid #e0e0e0; padding: 12px 15px; }
+        .form-control:focus, .form-select:focus { border-color: #4CAF50; box-shadow: 0 0 0 0.2rem rgba(76, 175, 80, 0.25); }
+        .btn-save { background: linear-gradient(135deg, #4CAF50, #45a049); border: none; color: white; border-radius: 50px; padding: 12px 30px; }
+        .btn-test { background: linear-gradient(135deg, #2196F3, #1976d2); border: none; color: white; border-radius: 50px; padding: 8px 20px; }
+        .setting-group { background: #f8f9fa; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem; border-right: 4px solid #4CAF50; }
+        .telegram-status { padding: 10px 15px; border-radius: 8px; margin-top: 10px; font-weight: 600; }
+        .telegram-status.connected { background: #e8f5e8; color: #4CAF50; border: 1px solid #4CAF50; }
+        .telegram-status.disconnected { background: #ffe6e6; color: #f44336; border: 1px solid #f44336; }
+        .notification { position: fixed; top: 20px; right: 20px; background: #4CAF50; color: white; padding: 15px 20px; border-radius: 15px; z-index: 1001; transform: translateX(400px); transition: all 0.3s; }
+        .notification.show { transform: translateX(0); }
+        .notification.error { background: #f44336; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/"><i class="fas fa-qrcode"></i> قارئ الباركود المتطور</a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/"><i class="fas fa-home"></i> الرئيسية</a>
+                <a class="nav-link" href="/dashboard"><i class="fas fa-chart-bar"></i> لوحة التحكم</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row justify-content-center">
+            <div class="col-lg-10">
+                <!-- إعدادات تليجرام -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fab fa-telegram"></i> إعدادات تليجرام</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="setting-group">
+                            <h6><i class="fas fa-robot"></i> إعدادات البوت</h6>
+                            
+                            <div class="mb-3">
+                                <label for="telegramBotToken" class="form-label">رمز البوت (Bot Token)</label>
+                                <input type="text" class="form-control" id="telegramBotToken" placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz">
+                                <div class="form-text">احصل على رمز البوت من <a href="https://t.me/BotFather" target="_blank">@BotFather</a></div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="telegramChatId" class="form-label">معرف المحادثة (Chat ID)</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="telegramChatId" placeholder="-1001234567890">
+                                    <button class="btn btn-test" type="button" id="getChatIdBtn">
+                                        <i class="fas fa-search"></i> الحصول على المعرف
+                                    </button>
+                                </div>
+                                <div class="form-text">أضف البوت للمجموعة وأرسل رسالة، ثم اضغط "الحصول على المعرف"</div>
+                            </div>
+
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-test" id="testTelegramBtn">
+                                    <i class="fas fa-paper-plane"></i> اختبار الإرسال
+                                </button>
+                            </div>
+
+                            <div id="telegramStatus" class="telegram-status disconnected">
+                                <i class="fas fa-times-circle"></i> غير متصل
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- إعدادات الماسح -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-camera"></i> إعدادات الماسح</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="setting-group">
+                            <h6><i class="fas fa-cogs"></i> سلوك المسح</h6>
+                            
+                            <div class="mb-3">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="scannerContinuous" checked>
+                                    <label class="form-check-label" for="scannerContinuous">المسح المستمر</label>
+                                </div>
+                                <div class="form-text">عند التفعيل، سيستمر المسح تلقائياً بعد كل نتيجة</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="scannerSound" checked>
+                                    <label class="form-check-label" for="scannerSound">الصوت عند المسح</label>
+                                </div>
+                                <div class="form-text">تشغيل صوت تنبيه عند اكتشاف باركود جديد</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="duplicateDelay" class="form-label">تأخير منع التكرار (بالثواني)</label>
+                                <input type="range" class="form-range" id="duplicateDelay" min="1" max="10" value="3" step="1">
+                                <div class="d-flex justify-content-between text-muted small">
+                                    <span>1 ثانية</span>
+                                    <span id="delayValue">3 ثواني</span>
+                                    <span>10 ثواني</span>
+                                </div>
+                                <div class="form-text">المدة المطلوبة بين مسح نفس الكود لمنع التكرار</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- إعدادات التطبيق -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-palette"></i> إعدادات التطبيق</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="setting-group">
+                            <h6><i class="fas fa-text-width"></i> العرض والتخصيص</h6>
+                            
+                            <div class="mb-3">
+                                <label for="appTitle" class="form-label">عنوان التطبيق</label>
+                                <input type="text" class="form-control" id="appTitle" value="قارئ الباركود المتطور">
+                                <div class="form-text">العنوان الذي يظهر في أعلى التطبيق</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="themeColor" class="form-label">لون السمة الرئيسي</label>
+                                <div class="d-flex align-items-center gap-3">
+                                    <input type="color" class="form-control" id="themeColor" value="#4CAF50" style="width: 80px; height: 40px;">
+                                    <span class="text-muted">اختر اللون المفضل للواجهة</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="setting-group">
+                            <h6><i class="fas fa-database"></i> قاعدة البيانات</h6>
+                            
+                            <div class="mb-3">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <button class="btn btn-info w-100" id="backupBtn">
+                                            <i class="fas fa-download"></i> نسخ احتياطي
+                                        </button>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <button class="btn btn-warning w-100" id="clearBtn">
+                                            <i class="fas fa-trash"></i> مسح البيانات
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="form-text">إدارة بيانات قاعدة البيانات المحلية</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- أزرار الحفظ -->
+                <div class="text-center">
+                    <button class="btn btn-save btn-lg" id="saveSettingsBtn">
+                        <i class="fas fa-save"></i> حفظ جميع الإعدادات
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification">
+        <i class="fas fa-check-circle"></i> تم الحفظ بنجاح!
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentSettings = {};
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSettings();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            const duplicateDelayRange = document.getElementById('duplicateDelay');
+            const delayValue = document.getElementById('delayValue');
+            
+            duplicateDelayRange.addEventListener('input', () => {
+                const value = duplicateDelayRange.value;
+                delayValue.textContent = value + (value == 1 ? ' ثانية' : ' ثواني');
+            });
+
+            document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
+            document.getElementById('testTelegramBtn').addEventListener('click', testTelegram);
+            document.getElementById('getChatIdBtn').addEventListener('click', getChatId);
+            document.getElementById('backupBtn').addEventListener('click', backupDatabase);
+            document.getElementById('clearBtn').addEventListener('click', clearDatabase);
+            document.getElementById('telegramBotToken').addEventListener('input', updateTelegramStatus);
+            document.getElementById('telegramChatId').addEventListener('input', updateTelegramStatus);
+        }
+
+        async function loadSettings() {
+            try {
+                const response = await fetch('/api/settings');
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentSettings = data.settings;
+                    populateForm(currentSettings);
+                    updateTelegramStatus();
+                }
+                
+            } catch (error) {
+                console.error('خطأ في تحميل الإعدادات:', error);
+                showNotification('خطأ في تحميل الإعدادات: ' + error.message, 'error');
+            }
+        }
+
+        function populateForm(settings) {
+            document.getElementById('telegramBotToken').value = settings.telegram_bot_token || '';
+            document.getElementById('telegramChatId').value = settings.telegram_chat_id || '';
+            document.getElementById('scannerContinuous').checked = settings.scanner_continuous === 'true';
+            document.getElementById('scannerSound').checked = settings.scanner_sound === 'true';
+            document.getElementById('duplicateDelay').value = parseInt(settings.scanner_duplicate_delay) / 1000 || 3;
+            document.getElementById('appTitle').value = settings.app_title || 'قارئ الباركود المتطور';
+            document.getElementById('themeColor').value = settings.theme_color || '#4CAF50';
+
+            const delayValue = document.getElementById('delayValue');
+            const delay = parseInt(settings.scanner_duplicate_delay) / 1000 || 3;
+            delayValue.textContent = delay + (delay == 1 ? ' ثانية' : ' ثواني');
+        }
+
+        async function saveSettings() {
+            try {
+                const settings = {
+                    telegram_bot_token: document.getElementById('telegramBotToken').value.trim(),
+                    telegram_chat_id: document.getElementById('telegramChatId').value.trim(),
+                    scanner_continuous: document.getElementById('scannerContinuous').checked.toString(),
+                    scanner_sound: document.getElementById('scannerSound').checked.toString(),
+                    scanner_duplicate_delay: (parseInt(document.getElementById('duplicateDelay').value) * 1000).toString(),
+                    app_title: document.getElementById('appTitle').value.trim(),
+                    theme_color: document.getElementById('themeColor').value
+                };
+
+                const response = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(settings)
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentSettings = {...currentSettings, ...settings};
+                    showNotification('تم حفظ الإعدادات بنجاح!', 'success');
+                    updateTelegramStatus();
+                } else {
+                    showNotification('خطأ في حفظ الإعدادات: ' + result.error, 'error');
+                }
+
+            } catch (error) {
+                console.error('خطأ في حفظ الإعدادات:', error);
+                showNotification('خطأ في الاتصال بالخادم', 'error');
+            }
+        }
+
+        async function testTelegram() {
+            const botToken = document.getElementById('telegramBotToken').value.trim();
+            const chatId = document.getElementById('telegramChatId').value.trim();
+            
+            if (!botToken || !chatId) {
+                showNotification('يرجى إدخال رمز البوت ومعرف المحادثة أولاً', 'error');
+                return;
+            }
+
+            try {
+                await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        telegram_bot_token: botToken,
+                        telegram_chat_id: chatId
+                    })
+                });
+
+                const response = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        code_data: 'TEST_MESSAGE_' + Date.now(),
+                        code_type: 'test',
+                        notes: 'رسالة اختبار من صفحة الإعدادات'
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (result.success && result.telegram_sent) {
+                    showNotification('✅ تم إرسال رسالة الاختبار بنجاح!', 'success');
+                    updateTelegramStatus();
+                } else {
+                    showNotification('❌ فشل في إرسال رسالة الاختبار', 'error');
+                }
+
+            } catch (error) {
+                console.error('خطأ في اختبار تليجرام:', error);
+                showNotification('خطأ في اختبار تليجرام: ' + error.message, 'error');
+            }
+        }
+
+        async function getChatId() {
+            const botToken = document.getElementById('telegramBotToken').value.trim();
+            
+            if (!botToken) {
+                showNotification('يرجى إدخال رمز البوت أولاً', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates`);
+                const data = await response.json();
+                
+                if (data.ok && data.result.length > 0) {
+                    const lastMessage = data.result[data.result.length - 1];
+                    const chatId = lastMessage.message.chat.id;
+                    
+                    document.getElementById('telegramChatId').value = chatId;
+                    showNotification('تم العثور على معرف المحادثة: ' + chatId, 'success');
+                } else {
+                    showNotification('لم يتم العثور على رسائل. أرسل رسالة للبوت أولاً', 'error');
+                }
+
+            } catch (error) {
+                console.error('خطأ في الحصول على معرف المحادثة:', error);
+                showNotification('خطأ في الحصول على معرف المحادثة', 'error');
+            }
+        }
+
+        function updateTelegramStatus() {
+            const botToken = document.getElementById('telegramBotToken').value.trim();
+            const chatId = document.getElementById('telegramChatId').value.trim();
+            const statusEl = document.getElementById('telegramStatus');
+            
+            if (botToken && chatId) {
+                statusEl.className = 'telegram-status connected';
+                statusEl.innerHTML = '<i class="fas fa-check-circle"></i> جاهز للإرسال';
+            } else {
+                statusEl.className = 'telegram-status disconnected';
+                statusEl.innerHTML = '<i class="fas fa-times-circle"></i> غير مكتمل الإعداد';
+            }
+        }
+
+        function backupDatabase() {
+            window.open('/api/export?format=json', '_blank');
+            showNotification('تم بدء تحميل النسخة الاحتياطية', 'success');
+        }
+
+        function clearDatabase() {
+            if (confirm('هل أنت متأكد من مسح جميع البيانات؟ هذا الإجراء لا يمكن التراجع عنه!')) {
+                showNotification('ميزة مسح البيانات ستتوفر قريباً', 'info');
+            }
+        }
+
+        function showNotification(message, type = 'success') {
+            const notification = document.getElementById('notification');
+            
+            notification.className = `notification ${type}`;
+            notification.innerHTML = `
+                <i class="fas fa-${type === 'error' ? 'exclamation-circle' : 'check-circle'}"></i>
+                ${message}
+            `;
+            
+            notification.classList.add('show');
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 4000);
+        }
+    </script>
+</body>
+</html>
