@@ -424,10 +424,14 @@ if __name__ == '__main__':
     # إنشاء قاعدة البيانات
     init_database()
     
+    # الحصول على المنفذ من متغير البيئة أو استخدام 5000 كافتراضي
+    port = int(os.environ.get('PORT', 5000))
+    debug_mode = os.environ.get('FLASK_DEBUG', 'True').lower() == 'true'
+    
     # تشغيل التطبيق
     print("🚀 تشغيل قارئ الباركود المتطور...")
-    print("📱 الرابط: http://localhost:5000")
-    print("📊 لوحة التحكم: http://localhost:5000/dashboard")
-    print("⚙️ الإعدادات: http://localhost:5000/settings")
+    print(f"📱 الرابط: http://localhost:{port}")
+    print(f"📊 لوحة التحكم: http://localhost:{port}/dashboard")
+    print(f"⚙️ الإعدادات: http://localhost:{port}/settings")
     
-    app.run(debug=True, host='0.0.0.0', port=5000) 
+    app.run(debug=debug_mode, host='0.0.0.0', port=port) 
