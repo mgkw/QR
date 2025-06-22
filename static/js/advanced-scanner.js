@@ -279,40 +279,98 @@ class AdvancedQRScanner {
             document.getElementById('stop-scan').style.display = 'flex';
             document.getElementById('scanner-guidance').style.display = 'flex';
 
-            // طلب أذونات الكاميرا أولاً
-            await this.requestCameraPermission();
+            // طلب أذونات الكاميرا أولاً مع timeout
+            const permissionTimeout = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('انتهت مهلة طلب أذونات الكاميرا')), 10000)
+            );
+            
+            await Promise.race([
+                this.requestCameraPermission(),
+                permissionTimeout
+            ]);
             
             this.updateScannerStatus('تهيئة الماسح...', 'loading');
+
+            // انتظار قصير للتأكد من تحميل DOM
+            await this.delay(300);
 
             // التحقق من وجود عنصر الماسح قبل بدء Quagga
             const scannerContainer = document.querySelector('#scanner-container');
             if (!scannerContainer) {
+                console.error('عنصر scanner-container غير موجود');
                 throw new Error('عنصر scanner-container غير موجود - تأكد من تحميل واجهة الماسح');
             }
 
-            // تحديث target في الإعدادات
-            this.quaggaConfig.inputStream.target = scannerContainer;
-
-            await new Promise((resolve, reject) => {
-                Quagga.init(this.quaggaConfig, (err) => {
-                    if (err) {
-                        console.error('خطأ في تشغيل الماسح:', err);
-                        reject(err);
-                        return;
+            // إعدادات مبسطة للبداية السريعة
+            const simpleConfig = {
+                inputStream: {
+                    name: "Live",
+                    type: "LiveStream",
+                    target: scannerContainer,
+                    constraints: {
+                        width: 640,
+                        height: 480,
+                        facingMode: "environment"
                     }
-                    resolve();
-                });
-            });
+                },
+                locator: {
+                    patchSize: "medium",
+                    halfSample: true
+                },
+                numOfWorkers: 2,
+                frequency: 10,
+                decoder: {
+                    readers: [
+                        'code_128_reader',
+                        'ean_reader', 
+                        'ean_8_reader',
+                        'code_39_reader'
+                    ]
+                },
+                locate: true
+            };
 
+            // تهيئة Quagga مع timeout
+            const initTimeout = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('انتهت مهلة تهيئة الماسح')), 15000)
+            );
+
+            await Promise.race([
+                new Promise((resolve, reject) => {
+                    Quagga.init(simpleConfig, (err) => {
+                        if (err) {
+                            console.error('خطأ في تشغيل الماسح:', err);
+                            reject(err);
+                            return;
+                        }
+                        console.log('✅ تم تهيئة الماسح بنجاح');
+                        resolve();
+                    });
+                }),
+                initTimeout
+            ]);
+
+            this.updateScannerStatus('بدء تشغيل الكاميرا...', 'loading');
+
+            // بدء Quagga
             Quagga.start();
             this.isScanning = true;
+            
+            // انتظار قصير للتأكد من بدء التشغيل
+            await this.delay(500);
+            
             this.updateScannerStatus('جاري المسح...', 'scanning');
 
+            // ربط الأحداث
             Quagga.onDetected(this.onDetected.bind(this));
             Quagga.onProcessed(this.onProcessed.bind(this));
             
-            // بدء مسح QR بالتوازي
-            this.startQRScanning();
+            // بدء مسح QR بالتوازي بعد التأكد من عمل الماسح الرئيسي
+            setTimeout(() => {
+                this.startQRScanning();
+            }, 1000);
+
+            console.log('🎯 الماسح يعمل بنجاح!');
 
         } catch (error) {
             console.error('فشل في بدء المسح:', error);
@@ -1270,6 +1328,17 @@ class AdvancedQRScanner {
     // دعم مسح QR codes المربعة بالتوازي
     async startQRScanning() {
         try {
+            console.log('🟡 بدء تشغيل مسح QR...');
+            
+            // التحقق من توفر jsQR
+            if (typeof jsQR === 'undefined') {
+                console.log('⚠️ مكتبة jsQR غير متوفرة');
+                return;
+            }
+            
+            // انتظار للتأكد من استقرار الماسح الرئيسي
+            await this.delay(2000);
+            
             // إنشاء عنصر فيديو مخفي لمسح QR
             this.createQRVideoElement();
             
@@ -1279,8 +1348,10 @@ class AdvancedQRScanner {
             // بدء مسح QR متكرر
             this.startQRScanLoop();
             
+            console.log('✅ مسح QR يعمل بنجاح');
+            
         } catch (error) {
-            console.log('QR scanning غير متاح:', error);
+            console.log('⚠️ QR scanning غير متاح:', error);
         }
     }
 
