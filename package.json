@@ -3,10 +3,6 @@
   "version": "2.0.0",
   "description": "قارئ الباركود المتطور مع Firebase وقاعدة البيانات المركزية",
   "main": "index.html",
-  "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=8.0.0"
-  },
   "scripts": {
     "build": "echo '✅ Static Firebase App - No build needed'",
     "start": "echo '✅ Static app deployed successfully'",
