@@ -145,6 +145,7 @@ def init_database():
         print(f"   👤 اسم المستخدم: {DEFAULT_OWNER['username']}")
         print(f"   🔑 كلمة المرور: {DEFAULT_OWNER['password']}")
         print(f"   📧 البريد: {DEFAULT_OWNER['email']}")
+        print("   👑 النظام الجديد: المدير ينشئ حسابات بأسماء فقط!")
     
     conn.commit()
     conn.close()
