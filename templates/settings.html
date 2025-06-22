@@ -149,6 +149,26 @@
                         </div>
 
                         <div class="setting-group">
+                            <h6><i class="fas fa-users"></i> إدارة المستخدمين</h6>
+                            
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle"></i>
+                                <strong>نظام الحسابات الجديد:</strong><br>
+                                • المدير فقط ينشئ الحسابات<br>
+                                • المستخدمون يدخلون بأسمائهم فقط<br>
+                                • كلمات المرور اختيارية
+                            </div>
+                            
+                            {% if user.role in ['owner', 'admin'] %}
+                            <div class="mb-3">
+                                <a href="/admin" class="btn btn-primary w-100">
+                                    <i class="fas fa-crown"></i> إدارة المستخدمين
+                                </a>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="setting-group">
                             <h6><i class="fas fa-database"></i> قاعدة البيانات</h6>
                             
                             <div class="mb-3">

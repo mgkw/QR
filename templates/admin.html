@@ -273,14 +273,16 @@
                         <div class="mb-3">
                             <label class="form-label">اسم المستخدم</label>
                             <input type="text" class="form-control" name="username" required>
+                            <div class="form-text">سيتمكن المستخدم من تسجيل الدخول بالاسم فقط</div>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">البريد الإلكتروني</label>
-                            <input type="email" class="form-control" name="email" required>
+                            <label class="form-label">البريد الإلكتروني (اختياري)</label>
+                            <input type="email" class="form-control" name="email" placeholder="سيتم إنشاء بريد تلقائي إذا تُرك فارغاً">
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">كلمة المرور</label>
-                            <input type="password" class="form-control" name="password" required minlength="6">
+                            <label class="form-label">كلمة المرور (اختيارية)</label>
+                            <input type="password" class="form-control" name="password" minlength="6" placeholder="اتركها فارغة للدخول بالاسم فقط">
+                            <div class="form-text">إذا تُركت فارغة، سيتمكن المستخدم من الدخول بالاسم فقط</div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">الدور</label>

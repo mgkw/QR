@@ -120,7 +120,7 @@ def init_database():
         ('scanner_duplicate_delay', '3000'),
         ('app_title', 'قارئ الباركود المتطور'),
         ('theme_color', '#4CAF50'),
-        ('registration_enabled', 'true'),
+        ('registration_enabled', 'false'),
         ('require_email_verification', 'false')
     ]
     
@@ -270,22 +270,29 @@ def get_current_user():
     
     return dict(user) if user else None
 
-def create_user(username, email, password, role='user'):
-    """إنشاء مستخدم جديد"""
+def create_user(username, email='', password='', role='user'):
+    """إنشاء مستخدم جديد - بكلمة مرور اختيارية"""
     try:
         conn = get_db_connection()
         
-        # التحقق من عدم وجود المستخدم
+        # التحقق من عدم وجود اسم المستخدم
         existing = conn.execute('''
-            SELECT id FROM users WHERE username = ? OR email = ?
-        ''', (username, email)).fetchone()
+            SELECT id FROM users WHERE username = ?
+        ''', (username,)).fetchone()
         
         if existing:
             conn.close()
-            return {'success': False, 'error': 'اسم المستخدم أو البريد موجود بالفعل'}
+            return {'success': False, 'error': 'اسم المستخدم موجود بالفعل'}
         
-        # تشفير كلمة المرور
-        password_hash = generate_password_hash(password)
+        # إذا لم يتم توفير بريد، استخدم اسم المستخدم
+        if not email:
+            email = f"{username}@local.system"
+        
+        # تشفير كلمة المرور إذا تم توفيرها، أو استخدام hash فارغ
+        if password:
+            password_hash = generate_password_hash(password)
+        else:
+            password_hash = ''  # بدون كلمة مرور
         
         # إدراج المستخدم
         cursor = conn.cursor()
@@ -303,27 +310,39 @@ def create_user(username, email, password, role='user'):
     except Exception as e:
         return {'success': False, 'error': f'خطأ في إنشاء المستخدم: {str(e)}'}
 
-def authenticate_user(username, password):
-    """التحقق من بيانات المستخدم"""
+def authenticate_user(username, password=''):
+    """التحقق من بيانات المستخدم - كلمة المرور اختيارية"""
     try:
         conn = get_db_connection()
         user = conn.execute('''
             SELECT id, username, email, password_hash, role, is_active
-            FROM users WHERE (username = ? OR email = ?) AND is_active = 1
-        ''', (username, username)).fetchone()
+            FROM users WHERE username = ? AND is_active = 1
+        ''', (username,)).fetchone()
         
-        if user and check_password_hash(user['password_hash'], password):
-            # تحديث وقت آخر تسجيل دخول
-            conn.execute('''
-                UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?
-            ''', (user['id'],))
-            conn.commit()
-            conn.close()
+        if user:
+            # إذا كان للمستخدم كلمة مرور، تحقق منها
+            if user['password_hash']:
+                if password and check_password_hash(user['password_hash'], password):
+                    auth_success = True
+                else:
+                    conn.close()
+                    return {'success': False, 'error': 'كلمة المرور مطلوبة وغير صحيحة'}
+            else:
+                # إذا لم تكن هناك كلمة مرور، السماح بالدخول
+                auth_success = True
             
-            return {'success': True, 'user': dict(user)}
+            if auth_success:
+                # تحديث وقت آخر تسجيل دخول
+                conn.execute('''
+                    UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?
+                ''', (user['id'],))
+                conn.commit()
+                conn.close()
+                
+                return {'success': True, 'user': dict(user)}
         
         conn.close()
-        return {'success': False, 'error': 'بيانات تسجيل الدخول غير صحيحة'}
+        return {'success': False, 'error': 'اسم المستخدم غير موجود'}
         
     except Exception as e:
         return {'success': False, 'error': f'خطأ في التحقق: {str(e)}'}
@@ -381,8 +400,8 @@ def login():
         username = data.get('username', '').strip()
         password = data.get('password', '')
         
-        if not username or not password:
-            error = 'يرجى إدخال اسم المستخدم وكلمة المرور'
+        if not username:
+            error = 'يرجى إدخال اسم المستخدم'
             if request.is_json:
                 return jsonify({'success': False, 'error': error})
             flash(error, 'error')
@@ -412,62 +431,11 @@ def login():
     
     return render_template('login.html')
 
-@app.route('/register', methods=['GET', 'POST'])
+@app.route('/register')
 def register():
-    """صفحة التسجيل الجديد"""
-    # التحقق من السماح بالتسجيل
-    registration_enabled = get_setting('registration_enabled', 'true') == 'true'
-    if not registration_enabled:
-        flash('التسجيل الجديد غير متاح حالياً', 'error')
-        return redirect(url_for('login'))
-    
-    if request.method == 'POST':
-        data = request.get_json() if request.is_json else request.form
-        username = data.get('username', '').strip()
-        email = data.get('email', '').strip()
-        password = data.get('password', '')
-        confirm_password = data.get('confirm_password', '')
-        
-        # التحقق من البيانات
-        if not all([username, email, password, confirm_password]):
-            error = 'جميع الحقول مطلوبة'
-            if request.is_json:
-                return jsonify({'success': False, 'error': error})
-            flash(error, 'error')
-            return render_template('register.html')
-        
-        if password != confirm_password:
-            error = 'كلمات المرور غير متطابقة'
-            if request.is_json:
-                return jsonify({'success': False, 'error': error})
-            flash(error, 'error')
-            return render_template('register.html')
-        
-        if len(password) < 6:
-            error = 'كلمة المرور يجب أن تكون 6 أحرف على الأقل'
-            if request.is_json:
-                return jsonify({'success': False, 'error': error})
-            flash(error, 'error')
-            return render_template('register.html')
-        
-        # إنشاء المستخدم
-        create_result = create_user(username, email, password)
-        
-        if create_result['success']:
-            if request.is_json:
-                return jsonify({
-                    'success': True, 
-                    'message': 'تم إنشاء الحساب بنجاح، يمكنك تسجيل الدخول الآن',
-                    'redirect': url_for('login')
-                })
-            flash('تم إنشاء الحساب بنجاح، يمكنك تسجيل الدخول الآن', 'success')
-            return redirect(url_for('login'))
-        else:
-            if request.is_json:
-                return jsonify({'success': False, 'error': create_result['error']})
-            flash(create_result['error'], 'error')
-    
-    return render_template('register.html')
+    """صفحة التسجيل معطلة - المدير فقط ينشئ الحسابات"""
+    flash('التسجيل الجديد متاح فقط للمدير. اطلب من المدير إنشاء حساب لك.', 'info')
+    return redirect(url_for('login'))
 
 @app.route('/logout')
 def logout():
@@ -824,18 +792,19 @@ def get_users():
 @app.route('/api/users/create', methods=['POST'])
 @admin_required
 def create_user_api():
-    """إنشاء مستخدم جديد من المدير"""
+    """إنشاء مستخدم جديد من المدير - كلمة المرور اختيارية"""
     try:
         data = request.get_json()
         username = data.get('username', '').strip()
         email = data.get('email', '').strip()
-        password = data.get('password', '')
+        password = data.get('password', '').strip()
         role = data.get('role', 'user')
         
-        if not all([username, email, password]):
-            return jsonify({'success': False, 'error': 'جميع الحقول مطلوبة'})
+        if not username:
+            return jsonify({'success': False, 'error': 'اسم المستخدم مطلوب'})
         
-        if len(password) < 6:
+        # كلمة المرور اختيارية - إذا تم توفيرها، تحقق من طولها
+        if password and len(password) < 6:
             return jsonify({'success': False, 'error': 'كلمة المرور يجب أن تكون 6 أحرف على الأقل'})
         
         result = create_user(username, email, password, role)
