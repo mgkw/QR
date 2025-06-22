@@ -1,10 +1,10 @@
-# إعدادات Render.com للتطبيق الجديد مع Firebase
+# إعدادات Render.com للموقع الثابت مع Firebase
 services:
-  - type: web
+  - type: static
     name: qr-scanner-firebase
-    env: static
     buildCommand: echo "✅ Firebase Static App - No build needed"
     staticPublishPath: .
+    pullRequestPreviewsEnabled: true
     headers:
       - path: /*
         headers:
