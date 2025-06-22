@@ -1592,17 +1592,17 @@ async function initializeDualScanning() {
                 frequency: 10,
                 decoder: {
                     readers: [
-                        "code_128_reader",
-                        "ean_reader",
-                        "ean_8_reader", 
-                        "code_39_reader",
-                        "code_39_vin_reader",
-                        "codabar_reader",
-                        "upc_reader",
-                        "upc_e_reader",
-                        "i2of5_reader",
-                        "2of5_reader",
-                        "code_93_reader"
+                        "code_128_reader",      // يدعم الحروف والأرقام
+                        "code_39_reader",       // يدعم الحروف والأرقام
+                        "code_39_vin_reader",   // نسخة محسنة من Code 39
+                        "code_93_reader",       // يدعم الحروف والأرقام
+                        "codabar_reader",       // للاستخدام الطبي والمكتبات
+                        "ean_reader",           // أرقام فقط
+                        "ean_8_reader",         // أرقام فقط
+                        "upc_reader",           // أرقام فقط
+                        "upc_e_reader",         // أرقام فقط
+                        "i2of5_reader",         // أرقام فقط
+                        "2of5_reader"           // أرقام فقط
                     ]
                 },
                 locate: true
@@ -1626,7 +1626,10 @@ async function initializeDualScanning() {
                 // Handle traditional barcode detection
                 Quagga.onDetected((result) => {
                     if (result && result.codeResult && result.codeResult.code) {
-                        console.log('Barcode detected:', result.codeResult.code);
+                        console.log('Barcode detected (full data):', result.codeResult.code);
+                        console.log('Barcode type:', typeof result.codeResult.code);
+                        console.log('Barcode length:', result.codeResult.code.length);
+                        console.log('Barcode format:', result.codeResult.format);
                         
                         // Extract location information from QuaggaJS result
                         let location = null;
@@ -1762,8 +1765,10 @@ function scanForQRCode() {
             locateRegion: true
         });
         
-        if (qrCode && qrCode.data && qrCode.data.trim().length > 0) {
-            console.log('QR Code detected:', qrCode.data);
+        if (qrCode && qrCode.data && qrCode.data.length > 0) {
+            console.log('QR Code detected (full data):', qrCode.data);
+            console.log('QR Code type:', typeof qrCode.data);
+            console.log('QR Code length:', qrCode.data.length);
             
             // Extract location information from jsQR result
             let location = null;
@@ -1786,7 +1791,8 @@ function scanForQRCode() {
                 }
             }
             
-            handleCodeDetection(qrCode.data.trim(), 'QR كود', location);
+            // أرسل البيانات الكاملة دون تعديل
+            handleCodeDetection(qrCode.data, 'QR كود', location);
         }
     } catch (error) {
         // Better error logging for debugging
@@ -2101,9 +2107,24 @@ window.resumeScanningAfterDuplicate = resumeScanningAfterDuplicate;
 
 // Universal Code Detection Handler (QR + Barcode)
 async function handleCodeDetection(code, codeType = 'كود', location = null) {
+    // تسجيل البيانات الكاملة للمراجعة
+    console.log('🔍 معالجة كود جديد:', {
+        code: code,
+        type: typeof code,
+        length: code ? code.length : 0,
+        codeType: codeType,
+        raw: JSON.stringify(code)
+    });
+    
     // Prevent simultaneous processing
     if (isProcessingCode) {
         console.debug('Code processing already in progress, ignoring:', code);
+        return;
+    }
+    
+    // التحقق من وجود البيانات
+    if (!code || code.length === 0) {
+        console.warn('⚠️ كود فارغ أو غير صالح');
         return;
     }
     
@@ -2492,8 +2513,41 @@ function getTelegramButtonText(status) {
 }
 
 async function saveResults() {
-    // Results are now automatically saved via API when created
-    // This function is kept for compatibility
+    // Save the latest result to the database via API
+    const latestResult = scannedResults[0]; // First item is the latest due to unshift
+    if (latestResult && !latestResult.saved) {
+        try {
+            const response = await fetch('/api/scan', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    barcode: latestResult.code,
+                    code_type: latestResult.codeType,
+                    user_id: currentUser.id || 1,
+                    username: latestResult.user,
+                    image_data: latestResult.image,
+                    notes: latestResult.isDuplicate ? `مكرر ×${latestResult.duplicateCount}` : 'جديد'
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Mark as saved and update ID
+                latestResult.saved = true;
+                latestResult.id = data.scan.id.toString();
+                console.log('✅ تم حفظ النتيجة في قاعدة البيانات:', latestResult.code);
+            } else {
+                console.error('❌ فشل حفظ النتيجة:', data.message);
+                showAlert('خطأ في حفظ النتيجة في قاعدة البيانات', 'error');
+            }
+        } catch (error) {
+            console.error('خطأ في حفظ النتيجة:', error);
+            showAlert('خطأ في الاتصال بقاعدة البيانات', 'error');
+        }
+    }
 }
 
 async function loadResults() {
@@ -2839,10 +2893,18 @@ async function sendToTelegram(result, isRetry = false) {
             duplicateInfo += '\n';
         }
         
-        // Clean the code: remove leading zeros and keep only numbers
-        const cleanCode = result.code.replace(/^0+/, '') || '0';
+        // Create comprehensive caption with full code (including letters)
+        const caption = `${codeIcon} **${result.codeType}:** \`${result.code}\`
+
+👤 **المستخدم:** ${result.user}
+📅 **التوقيت:** ${formatDateTimeBaghdad(result.timestamp)}
+🏢 **النظام:** ${systemName}
+${duplicateInfo}
+📍 **الموقع:** العراق - بغداد
+✅ **حالة المسح:** ${result.isDuplicate ? 'مكرر' : 'جديد'}`;
         
-        formData.append('caption', cleanCode);
+        formData.append('caption', caption);
+        formData.append('parse_mode', 'Markdown');
         
         const response = await fetch(`https://api.telegram.org/bot${settings.botToken}/sendPhoto`, {
             method: 'POST',
