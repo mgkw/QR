@@ -28,7 +28,7 @@ class AdvancedQRScanner {
             inputStream: {
                 name: "Live",
                 type: "LiveStream",
-                target: document.querySelector('#scanner-container'),
+                target: null, // سيتم تحديده لاحقاً بعد إنشاء DOM
                 constraints: this.cameraSettings.video,
                 area: {
                     top: "20%",
@@ -61,6 +61,34 @@ class AdvancedQRScanner {
     init() {
         this.createScannerUI();
         this.bindEvents();
+        this.validateScannerElements();
+    }
+
+    validateScannerElements() {
+        // التحقق من العناصر المطلوبة
+        const requiredElements = [
+            'scanner-container',
+            'start-scan',
+            'stop-scan',
+            'scanner-status',
+            'scan-count',
+            'success-count',
+            'accuracy'
+        ];
+
+        const missingElements = [];
+        requiredElements.forEach(elementId => {
+            if (!document.getElementById(elementId)) {
+                missingElements.push(elementId);
+            }
+        });
+
+        if (missingElements.length > 0) {
+            console.error('❌ عناصر الماسح المفقودة:', missingElements);
+            throw new Error(`عناصر مفقودة من واجهة الماسح: ${missingElements.join(', ')}`);
+        }
+
+        console.log('✅ جميع عناصر الماسح المتقدم موجودة');
     }
 
     createScannerUI() {
@@ -163,11 +191,37 @@ class AdvancedQRScanner {
     }
 
     bindEvents() {
-        document.getElementById('start-scan').addEventListener('click', () => this.startScanning());
-        document.getElementById('stop-scan').addEventListener('click', () => this.stopScanning());
-        document.getElementById('toggle-torch').addEventListener('click', () => this.toggleTorch());
-        document.getElementById('force-send').addEventListener('click', () => this.forceSendDuplicate());
+        // ربط الأحداث مع التحقق من وجود العناصر
+        const startBtn = document.getElementById('start-scan');
+        const stopBtn = document.getElementById('stop-scan');
+        const torchBtn = document.getElementById('toggle-torch');
+        const forceSendBtn = document.getElementById('force-send');
 
+        if (startBtn) {
+            startBtn.addEventListener('click', () => this.startScanning());
+        } else {
+            console.error('زر بدء المسح غير موجود');
+        }
+
+        if (stopBtn) {
+            stopBtn.addEventListener('click', () => this.stopScanning());
+        } else {
+            console.error('زر إيقاف المسح غير موجود');
+        }
+
+        if (torchBtn) {
+            torchBtn.addEventListener('click', () => this.toggleTorch());
+        } else {
+            console.error('زر الفلاش غير موجود');
+        }
+
+        if (forceSendBtn) {
+            forceSendBtn.addEventListener('click', () => this.forceSendDuplicate());
+        } else {
+            console.error('زر الإرسال القسري غير موجود');
+        }
+
+        // ربط اختصار لوحة المفاتيح
         document.addEventListener('keydown', (e) => {
             if (e.code === 'Space') {
                 e.preventDefault();
@@ -193,6 +247,15 @@ class AdvancedQRScanner {
             await this.requestCameraPermission();
             
             this.updateScannerStatus('تهيئة الماسح...', 'loading');
+
+            // التحقق من وجود عنصر الماسح قبل بدء Quagga
+            const scannerContainer = document.querySelector('#scanner-container');
+            if (!scannerContainer) {
+                throw new Error('عنصر scanner-container غير موجود - تأكد من تحميل واجهة الماسح');
+            }
+
+            // تحديث target في الإعدادات
+            this.quaggaConfig.inputStream.target = scannerContainer;
 
             await new Promise((resolve, reject) => {
                 Quagga.init(this.quaggaConfig, (err) => {
@@ -368,6 +431,13 @@ class AdvancedQRScanner {
         try {
             this.updateScannerStatus('جرب إعدادات أساسية...', 'loading');
             
+            // التحقق من وجود عنصر الماسح
+            const scannerContainer = document.querySelector('#scanner-container');
+            if (!scannerContainer) {
+                console.error('عنصر scanner-container غير موجود');
+                throw new Error('واجهة الماسح غير متوفرة');
+            }
+            
             // إعدادات كاميرا أساسية
             this.quaggaConfig.inputStream.constraints = {
                 width: { min: 640 },
@@ -378,12 +448,31 @@ class AdvancedQRScanner {
             // إزالة بعض القيود
             delete this.quaggaConfig.inputStream.constraints.frameRate;
             
+            // تحديث target
+            this.quaggaConfig.inputStream.target = scannerContainer;
+            
             // إخفاء نافذة الخطأ
             const errorModal = bootstrap.Modal.getInstance(document.getElementById('cameraErrorModal'));
             if (errorModal) errorModal.hide();
             
-            // محاولة جديدة
-            await this.startScanning();
+            // محاولة جديدة مع Quagga مباشرة
+            await new Promise((resolve, reject) => {
+                Quagga.init(this.quaggaConfig, (err) => {
+                    if (err) {
+                        console.error('خطأ في الإعدادات الأساسية:', err);
+                        reject(err);
+                        return;
+                    }
+                    resolve();
+                });
+            });
+
+            Quagga.start();
+            this.isScanning = true;
+            this.updateScannerStatus('جاري المسح...', 'scanning');
+
+            Quagga.onDetected(this.onDetected.bind(this));
+            Quagga.onProcessed(this.onProcessed.bind(this));
             
         } catch (error) {
             console.error('فشل في الإعدادات الأساسية:', error);
@@ -758,30 +847,60 @@ class AdvancedQRScanner {
 
     updateScannerStatus(message, type) {
         const statusEl = document.getElementById('scanner-status');
-        const iconMap = {
-            'loading': 'fa-spinner fa-spin',
-            'scanning': 'fa-eye',
-            'processing': 'fa-cog fa-spin',
-            'success': 'fa-check',
-            'error': 'fa-exclamation-triangle',
-            'stopped': 'fa-stop'
-        };
+        if (!statusEl) {
+            console.warn('عنصر حالة الماسح غير موجود:', message);
+            return;
+        }
         
-        statusEl.innerHTML = `
-            <i class="fas ${iconMap[type] || 'fa-qrcode'}"></i>
-            <span>${message}</span>
-        `;
-        
-        statusEl.className = `status-indicator ${type}`;
+        try {
+            const iconMap = {
+                'loading': 'fa-spinner fa-spin',
+                'scanning': 'fa-eye',
+                'processing': 'fa-cog fa-spin',
+                'success': 'fa-check',
+                'error': 'fa-exclamation-triangle',
+                'stopped': 'fa-stop'
+            };
+            
+            statusEl.innerHTML = `
+                <i class="fas ${iconMap[type] || 'fa-qrcode'}"></i>
+                <span>${message}</span>
+            `;
+            
+            statusEl.className = `status-indicator ${type}`;
+        } catch (error) {
+            console.error('خطأ في تحديث حالة الماسح:', error);
+        }
     }
 
     updateStats() {
-        document.getElementById('scan-count').textContent = this.scanCount;
-        document.getElementById('success-count').textContent = this.successCount;
-        
-        const accuracy = this.scanCount > 0 ? 
-            Math.round((this.successCount / this.scanCount) * 100) : 100;
-        document.getElementById('accuracy').textContent = accuracy + '%';
+        try {
+            const scanCountEl = document.getElementById('scan-count');
+            const successCountEl = document.getElementById('success-count');
+            const accuracyEl = document.getElementById('accuracy');
+            
+            if (scanCountEl) {
+                scanCountEl.textContent = this.scanCount;
+            } else {
+                console.warn('عنصر عداد المسح غير موجود');
+            }
+            
+            if (successCountEl) {
+                successCountEl.textContent = this.successCount;
+            } else {
+                console.warn('عنصر عداد النجاح غير موجود');
+            }
+            
+            if (accuracyEl) {
+                const accuracy = this.scanCount > 0 ? 
+                    Math.round((this.successCount / this.scanCount) * 100) : 100;
+                accuracyEl.textContent = accuracy + '%';
+            } else {
+                console.warn('عنصر دقة المسح غير موجود');
+            }
+        } catch (error) {
+            console.error('خطأ في تحديث الإحصائيات:', error);
+        }
     }
 
     addToRecentScans(code, format, status) {
