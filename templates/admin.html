@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة تحكم المدير - قارئ الباركود المتطور</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        * { font-family: 'Cairo', sans-serif; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+        .navbar { background: linear-gradient(135deg, #4CAF50, #2196F3) !important; }
+        .navbar-brand { font-weight: bold; }
+        .card { 
+            border-radius: 15px; 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1); 
+            border: none; 
+            margin-bottom: 2rem;
+            transition: transform 0.2s;
+        }
+        .card:hover { transform: translateY(-5px); }
+        .card-header { 
+            background: linear-gradient(135deg, #4CAF50, #2196F3); 
+            color: white; 
+            border-radius: 15px 15px 0 0 !important; 
+            font-weight: 600;
+        }
+        .admin-stats {
+            background: linear-gradient(135deg, #FF6B6B, #4ECDC4);
+            color: white;
+            border-radius: 15px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 1.5rem;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            display: block;
+        }
+        .admin-menu .list-group-item {
+            border: none;
+            margin-bottom: 0.5rem;
+            border-radius: 10px;
+            transition: all 0.3s;
+        }
+        .admin-menu .list-group-item:hover {
+            background: #f8f9fa;
+            transform: translateX(10px);
+        }
+        .admin-menu .list-group-item i {
+            width: 20px;
+            margin-left: 10px;
+        }
+        .quick-actions .btn {
+            border-radius: 10px;
+            margin: 0.25rem;
+            padding: 0.75rem 1.5rem;
+        }
+        .user-info {
+            background: rgba(255,255,255,0.9);
+            border-radius: 10px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        .badge-role {
+            font-size: 0.8rem;
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+        }
+        .recent-activity {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .activity-item {
+            border-bottom: 1px solid #eee;
+            padding: 1rem 0;
+        }
+        .activity-item:last-child {
+            border-bottom: none;
+        }
+        .activity-time {
+            font-size: 0.85rem;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-qrcode"></i> قارئ الباركود المتطور
+            </a>
+            
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/"><i class="fas fa-home"></i> الرئيسية</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard"><i class="fas fa-chart-bar"></i> لوحة التحكم</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/settings"><i class="fas fa-cog"></i> الإعدادات</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/admin"><i class="fas fa-crown"></i> إدارة النظام</a>
+                    </li>
+                </ul>
+                
+                <ul class="navbar-nav">
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-user"></i> {{ user.username }}
+                            <span class="badge bg-warning">{{ user.role }}</span>
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="/profile"><i class="fas fa-user-edit"></i> الملف الشخصي</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt"></i> تسجيل الخروج</a></li>
+                        </ul>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- معلومات المدير -->
+        <div class="user-info">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h4 class="mb-1">
+                        <i class="fas fa-crown text-warning"></i> 
+                        مرحباً {{ user.username }}
+                    </h4>
+                    <p class="mb-0 text-muted">مدير النظام - لوحة التحكم الرئيسية</p>
+                </div>
+                <span class="badge badge-role bg-warning text-dark">
+                    <i class="fas fa-shield-alt"></i> {{ user.role.title() }}
+                </span>
+            </div>
+        </div>
+
+        <!-- إحصائيات سريعة -->
+        <div class="admin-stats">
+            <div class="row">
+                <div class="col-md-3 col-6">
+                    <div class="stat-card">
+                        <i class="fas fa-users fa-2x mb-2"></i>
+                        <span class="stat-number" id="totalUsers">-</span>
+                        <small>إجمالي المستخدمين</small>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6">
+                    <div class="stat-card">
+                        <i class="fas fa-qrcode fa-2x mb-2"></i>
+                        <span class="stat-number" id="totalScans">-</span>
+                        <small>إجمالي المسح</small>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6">
+                    <div class="stat-card">
+                        <i class="fas fa-calendar-day fa-2x mb-2"></i>
+                        <span class="stat-number" id="todayScans">-</span>
+                        <small>مسح اليوم</small>
+                    </div>
+                </div>
+                <div class="col-md-3 col-6">
+                    <div class="stat-card">
+                        <i class="fas fa-paper-plane fa-2x mb-2"></i>
+                        <span class="stat-number" id="telegramSent">-</span>
+                        <small>رسائل التليجرام</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- قائمة الإدارة -->
+            <div class="col-lg-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-list"></i> قائمة الإدارة</h5>
+                    </div>
+                    <div class="card-body admin-menu">
+                        <div class="list-group list-group-flush">
+                            <a href="/admin/users" class="list-group-item list-group-item-action">
+                                <i class="fas fa-users"></i>
+                                إدارة المستخدمين
+                                <span class="badge bg-primary float-end" id="userCount">-</span>
+                            </a>
+                            <a href="/settings" class="list-group-item list-group-item-action">
+                                <i class="fas fa-cog"></i>
+                                إعدادات النظام
+                            </a>
+                            <a href="/dashboard" class="list-group-item list-group-item-action">
+                                <i class="fas fa-chart-line"></i>
+                                تقارير وإحصائيات
+                            </a>
+                            <a href="#" class="list-group-item list-group-item-action" onclick="exportData()">
+                                <i class="fas fa-download"></i>
+                                تصدير البيانات
+                            </a>
+                            <a href="#" class="list-group-item list-group-item-action" onclick="testTelegram()">
+                                <i class="fab fa-telegram"></i>
+                                اختبار التليجرام
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- إجراءات سريعة -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-bolt"></i> إجراءات سريعة</h5>
+                    </div>
+                    <div class="card-body quick-actions text-center">
+                        <button class="btn btn-success" onclick="showCreateUserModal()">
+                            <i class="fas fa-user-plus"></i> إضافة مستخدم
+                        </button>
+                        <button class="btn btn-info" onclick="refreshStats()">
+                            <i class="fas fa-sync"></i> تحديث الإحصائيات
+                        </button>
+                        <button class="btn btn-warning" onclick="showSystemInfo()">
+                            <i class="fas fa-info-circle"></i> معلومات النظام
+                        </button>
+                        <button class="btn btn-secondary" onclick="window.open('/api/export?format=json', '_blank')">
+                            <i class="fas fa-file-export"></i> نسخ احتياطي
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- النشاط الأخير -->
+            <div class="col-lg-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-history"></i> النشاط الأخير</h5>
+                    </div>
+                    <div class="card-body recent-activity" id="recentActivity">
+                        <div class="text-center">
+                            <i class="fas fa-spinner fa-spin fa-2x"></i>
+                            <p class="mt-2">جارٍ تحميل النشاط الأخير...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal إنشاء مستخدم -->
+    <div class="modal fade" id="createUserModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-user-plus"></i> إنشاء مستخدم جديد</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="createUserForm">
+                        <div class="mb-3">
+                            <label class="form-label">اسم المستخدم</label>
+                            <input type="text" class="form-control" name="username" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">البريد الإلكتروني</label>
+                            <input type="email" class="form-control" name="email" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">كلمة المرور</label>
+                            <input type="password" class="form-control" name="password" required minlength="6">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">الدور</label>
+                            <select class="form-select" name="role">
+                                <option value="user">مستخدم عادي</option>
+                                <option value="admin">مدير</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="button" class="btn btn-success" onclick="createUser()">إنشاء المستخدم</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let createUserModalInstance;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            createUserModalInstance = new bootstrap.Modal(document.getElementById('createUserModal'));
+            loadDashboardData();
+            loadRecentActivity();
+        });
+
+        async function loadDashboardData() {
+            try {
+                // تحميل الإحصائيات
+                const statsResponse = await fetch('/api/statistics');
+                const statsData = await statsResponse.json();
+                
+                if (statsData.success) {
+                    document.getElementById('totalScans').textContent = statsData.general.total_scans || 0;
+                    document.getElementById('todayScans').textContent = statsData.today.today_scans || 0;
+                    document.getElementById('telegramSent').textContent = statsData.general.telegram_sent || 0;
+                }
+
+                // تحميل عدد المستخدمين
+                const usersResponse = await fetch('/api/users?limit=1');
+                const usersData = await usersResponse.json();
+                
+                if (usersData.success) {
+                    document.getElementById('totalUsers').textContent = usersData.pagination.total || 0;
+                    document.getElementById('userCount').textContent = usersData.pagination.total || 0;
+                }
+
+            } catch (error) {
+                console.error('خطأ في تحميل بيانات لوحة التحكم:', error);
+            }
+        }
+
+        async function loadRecentActivity() {
+            try {
+                const response = await fetch('/api/results?limit=10');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const container = document.getElementById('recentActivity');
+                    
+                    if (data.results.length === 0) {
+                        container.innerHTML = '<div class="text-center text-muted">لا توجد أنشطة حديثة</div>';
+                        return;
+                    }
+
+                    const activities = data.results.map(result => `
+                        <div class="activity-item">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <strong>${result.code_data}</strong>
+                                    <small class="text-muted d-block">نوع: ${result.code_type}</small>
+                                    ${result.notes ? `<small class="text-info">${result.notes}</small>` : ''}
+                                </div>
+                                <div class="text-end">
+                                    <div class="activity-time">${new Date(result.timestamp).toLocaleString('ar-SA')}</div>
+                                    ${result.telegram_sent ? '<span class="badge bg-success">أُرسل للتليجرام</span>' : '<span class="badge bg-secondary">لم يُرسل</span>'}
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+
+                    container.innerHTML = activities;
+                }
+
+            } catch (error) {
+                console.error('خطأ في تحميل النشاط الأخير:', error);
+                document.getElementById('recentActivity').innerHTML = 
+                    '<div class="text-center text-danger">خطأ في تحميل النشاط الأخير</div>';
+            }
+        }
+
+        function showCreateUserModal() {
+            document.getElementById('createUserForm').reset();
+            createUserModalInstance.show();
+        }
+
+        async function createUser() {
+            try {
+                const form = document.getElementById('createUserForm');
+                const formData = new FormData(form);
+                
+                const data = {
+                    username: formData.get('username'),
+                    email: formData.get('email'),
+                    password: formData.get('password'),
+                    role: formData.get('role')
+                };
+
+                const response = await fetch('/api/users/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert('تم إنشاء المستخدم بنجاح!', 'success');
+                    createUserModalInstance.hide();
+                    loadDashboardData();
+                } else {
+                    showAlert(result.error, 'error');
+                }
+
+            } catch (error) {
+                console.error('خطأ في إنشاء المستخدم:', error);
+                showAlert('حدث خطأ في إنشاء المستخدم', 'error');
+            }
+        }
+
+        async function testTelegram() {
+            try {
+                const response = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        code_data: 'TEST_ADMIN_' + Date.now(),
+                        code_type: 'test',
+                        notes: 'رسالة اختبار من لوحة تحكم المدير'
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (result.success && result.telegram_sent) {
+                    showAlert('تم إرسال رسالة الاختبار بنجاح!', 'success');
+                } else {
+                    showAlert('فشل في إرسال رسالة الاختبار', 'error');
+                }
+
+            } catch (error) {
+                console.error('خطأ في اختبار التليجرام:', error);
+                showAlert('حدث خطأ في اختبار التليجرام', 'error');
+            }
+        }
+
+        function exportData() {
+            window.open('/api/export?format=json', '_blank');
+            showAlert('تم بدء تصدير البيانات', 'info');
+        }
+
+        function refreshStats() {
+            showAlert('جارٍ تحديث الإحصائيات...', 'info');
+            loadDashboardData();
+            loadRecentActivity();
+        }
+
+        async function showSystemInfo() {
+            try {
+                const response = await fetch('/api/debug/info');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const info = `
+                        النظام: ${data.platform}
+                        إصدار Python: ${data.python_version}
+                        الحالة: ${data.status}
+                    `;
+                    alert('معلومات النظام:\n' + info);
+                } else {
+                    showAlert('فشل في الحصول على معلومات النظام', 'error');
+                }
+
+            } catch (error) {
+                console.error('خطأ في جلب معلومات النظام:', error);
+                showAlert('حدث خطأ في جلب معلومات النظام', 'error');
+            }
+        }
+
+        function showAlert(message, type) {
+            // إنشاء تنبيه مؤقت
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show position-fixed`;
+            alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 1060; min-width: 300px;';
+            alertDiv.innerHTML = `
+                <i class="fas fa-${type === 'error' ? 'exclamation-circle' : type === 'success' ? 'check-circle' : 'info-circle'}"></i>
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            document.body.appendChild(alertDiv);
+            
+            // إزالة التنبيه تلقائياً بعد 4 ثواني
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.remove();
+                }
+            }, 4000);
+        }
+    </script>
+</body>
+</html> 

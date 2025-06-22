@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تسجيل الدخول - قارئ الباركود المتطور</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        * { font-family: 'Cairo', sans-serif; }
+        body { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            min-height: 100vh; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+        }
+        
+        .login-container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            overflow: hidden;
+            max-width: 400px;
+            width: 100%;
+            margin: 20px;
+        }
+        
+        .login-header {
+            background: linear-gradient(135deg, #4CAF50, #2196F3);
+            color: white;
+            text-align: center;
+            padding: 2rem;
+        }
+        
+        .login-header h2 {
+            margin: 0;
+            font-size: 1.8rem;
+        }
+        
+        .login-header i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.9;
+        }
+        
+        .login-body {
+            padding: 2rem;
+        }
+        
+        .form-control {
+            border-radius: 10px;
+            border: 2px solid #e0e0e0;
+            padding: 12px 15px;
+            margin-bottom: 1rem;
+            transition: all 0.3s;
+        }
+        
+        .form-control:focus {
+            border-color: #4CAF50;
+            box-shadow: 0 0 0 0.2rem rgba(76, 175, 80, 0.25);
+        }
+        
+        .btn-login {
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            border: none;
+            color: white;
+            border-radius: 10px;
+            padding: 12px;
+            width: 100%;
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            transition: transform 0.2s;
+        }
+        
+        .btn-login:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.3);
+        }
+        
+        .alert {
+            border-radius: 10px;
+            border: none;
+        }
+        
+        .register-link {
+            text-align: center;
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid #e0e0e0;
+        }
+        
+        .register-link a {
+            color: #4CAF50;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        
+        .register-link a:hover {
+            text-decoration: underline;
+        }
+        
+        .input-group-text {
+            background: transparent;
+            border-left: none;
+            border-color: #e0e0e0;
+        }
+        
+        .input-group .form-control {
+            border-right: none;
+            margin-bottom: 0;
+        }
+        
+        .input-group {
+            margin-bottom: 1rem;
+        }
+        
+        .loading {
+            display: none;
+        }
+        
+        .btn-login:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <i class="fas fa-qrcode"></i>
+            <h2>قارئ الباركود المتطور</h2>
+            <p class="mb-0">تسجيل الدخول</p>
+        </div>
+        
+        <div class="login-body">
+            <!-- رسائل Flash -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                            <i class="fas fa-{{ 'exclamation-circle' if category == 'error' else 'info-circle' }}"></i>
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            
+            <form id="loginForm" method="POST">
+                <div class="input-group">
+                    <span class="input-group-text">
+                        <i class="fas fa-user"></i>
+                    </span>
+                    <input type="text" class="form-control" name="username" id="username" 
+                           placeholder="اسم المستخدم أو البريد الإلكتروني" required>
+                </div>
+                
+                <div class="input-group">
+                    <span class="input-group-text">
+                        <i class="fas fa-lock"></i>
+                    </span>
+                    <input type="password" class="form-control" name="password" id="password" 
+                           placeholder="كلمة المرور" required>
+                </div>
+                
+                <button type="submit" class="btn btn-login" id="loginBtn">
+                    <span class="login-text">
+                        <i class="fas fa-sign-in-alt"></i> تسجيل الدخول
+                    </span>
+                    <span class="loading">
+                        <i class="fas fa-spinner fa-spin"></i> جارٍ تسجيل الدخول...
+                    </span>
+                </button>
+            </form>
+            
+            <div class="register-link">
+                <p class="mb-0">ليس لديك حساب؟ <a href="/register">إنشاء حساب جديد</a></p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const loginBtn = document.getElementById('loginBtn');
+            const loginText = loginBtn.querySelector('.login-text');
+            const loading = loginBtn.querySelector('.loading');
+            
+            // إظهار حالة التحميل
+            loginBtn.disabled = true;
+            loginText.style.display = 'none';
+            loading.style.display = 'inline';
+            
+            try {
+                const formData = new FormData(this);
+                const data = {
+                    username: formData.get('username'),
+                    password: formData.get('password')
+                };
+                
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // نجح تسجيل الدخول
+                    showAlert('تم تسجيل الدخول بنجاح!', 'success');
+                    
+                    setTimeout(() => {
+                        window.location.href = result.redirect || '/';
+                    }, 1000);
+                } else {
+                    // فشل تسجيل الدخول
+                    showAlert(result.error, 'error');
+                }
+                
+            } catch (error) {
+                console.error('خطأ في تسجيل الدخول:', error);
+                showAlert('حدث خطأ في الاتصال بالخادم', 'error');
+            } finally {
+                // إخفاء حالة التحميل
+                loginBtn.disabled = false;
+                loginText.style.display = 'inline';
+                loading.style.display = 'none';
+            }
+        });
+        
+        function showAlert(message, type) {
+            // إزالة التنبيهات السابقة
+            const existingAlerts = document.querySelectorAll('.alert');
+            existingAlerts.forEach(alert => alert.remove());
+            
+            // إنشاء تنبيه جديد
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type === 'error' ? 'danger' : 'success'} alert-dismissible fade show`;
+            alertDiv.innerHTML = `
+                <i class="fas fa-${type === 'error' ? 'exclamation-circle' : 'check-circle'}"></i>
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            // إدراج التنبيه في أعلى النموذج
+            const form = document.getElementById('loginForm');
+            form.parentNode.insertBefore(alertDiv, form);
+        }
+        
+        // التركيز على حقل اسم المستخدم عند تحميل الصفحة
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('username').focus();
+        });
+    </script>
+</body>
+</html> 

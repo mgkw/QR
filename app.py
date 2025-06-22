@@ -5,7 +5,7 @@
 QR Scanner Advanced - Python Application with SQLite
 """
 
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, session, redirect, url_for, flash
 import sqlite3
 import json
 import requests
@@ -14,6 +14,8 @@ import os
 import threading
 import time
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
+from functools import wraps
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'qr-scanner-secret-key-2024'
@@ -29,12 +31,35 @@ DATABASE = 'qr_scanner.db'
 TELEGRAM_BOT_TOKEN = "7668051564:AAFdFqSd0CKrlSOyPKyFwf-xHi791lcsC_U"
 TELEGRAM_CHAT_ID = "-1002439956600"
 
+# إعدادات المدير الافتراضي
+DEFAULT_OWNER = {
+    'username': 'admin',
+    'password': 'admin123',  # سيتم تشفيره
+    'email': 'admin@qrscanner.com',
+    'role': 'owner'
+}
+
 def init_database():
     """إنشاء قاعدة البيانات والجداول"""
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
     
-    # جدول النتائج
+    # جدول المستخدمين
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT DEFAULT 'user',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_login DATETIME,
+            is_active BOOLEAN DEFAULT 1,
+            profile_picture TEXT
+        )
+    ''')
+    
+    # جدول النتائج (مع إضافة معرف المستخدم)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS scan_results (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,7 +70,9 @@ def init_database():
             ip_address TEXT,
             notes TEXT,
             telegram_sent BOOLEAN DEFAULT 0,
-            image_path TEXT
+            image_path TEXT,
+            user_id INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users (id)
         )
     ''')
     
@@ -71,19 +98,53 @@ def init_database():
         )
     ''')
     
-    # إدراج الإعدادات الافتراضية (بدون إعدادات التليجرام لأنها ثابتة)
+    # جدول جلسات تسجيل الدخول
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            session_token TEXT UNIQUE NOT NULL,
+            ip_address TEXT,
+            user_agent TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            expires_at DATETIME,
+            is_active BOOLEAN DEFAULT 1,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    ''')
+    
+    # إدراج الإعدادات الافتراضية
     default_settings = [
         ('scanner_continuous', 'true'),
         ('scanner_sound', 'true'),
         ('scanner_duplicate_delay', '3000'),
         ('app_title', 'قارئ الباركود المتطور'),
-        ('theme_color', '#4CAF50')
+        ('theme_color', '#4CAF50'),
+        ('registration_enabled', 'true'),
+        ('require_email_verification', 'false')
     ]
     
     for key, value in default_settings:
         cursor.execute('''
             INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)
         ''', (key, value))
+    
+    # إنشاء حساب المدير الافتراضي
+    admin_exists = cursor.execute('''
+        SELECT COUNT(*) FROM users WHERE role = 'owner'
+    ''').fetchone()[0]
+    
+    if admin_exists == 0:
+        password_hash = generate_password_hash(DEFAULT_OWNER['password'])
+        cursor.execute('''
+            INSERT INTO users (username, email, password_hash, role, is_active)
+            VALUES (?, ?, ?, ?, 1)
+        ''', (DEFAULT_OWNER['username'], DEFAULT_OWNER['email'], password_hash, DEFAULT_OWNER['role']))
+        
+        print("🔐 تم إنشاء حساب المدير الافتراضي:")
+        print(f"   👤 اسم المستخدم: {DEFAULT_OWNER['username']}")
+        print(f"   🔑 كلمة المرور: {DEFAULT_OWNER['password']}")
+        print(f"   📧 البريد: {DEFAULT_OWNER['email']}")
     
     conn.commit()
     conn.close()
@@ -145,6 +206,107 @@ def send_telegram_message(message, image_path=None):
         print(f"خطأ في إرسال تليجرام: {e}")
         return False
 
+# ===== دوال المصادقة والمستخدمين =====
+
+def login_required(f):
+    """ديكوريتر للتحقق من تسجيل الدخول"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            if request.is_json:
+                return jsonify({'success': False, 'error': 'مطلوب تسجيل الدخول', 'redirect': '/login'})
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def admin_required(f):
+    """ديكوريتر للتحقق من صلاحيات المدير"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        
+        user = get_current_user()
+        if not user or user['role'] not in ['owner', 'admin']:
+            if request.is_json:
+                return jsonify({'success': False, 'error': 'غير مصرح لك بالوصول'})
+            return redirect(url_for('index'))
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
+def get_current_user():
+    """الحصول على المستخدم الحالي"""
+    if 'user_id' not in session:
+        return None
+    
+    conn = get_db_connection()
+    user = conn.execute('''
+        SELECT id, username, email, role, created_at, last_login, profile_picture 
+        FROM users WHERE id = ? AND is_active = 1
+    ''', (session['user_id'],)).fetchone()
+    conn.close()
+    
+    return dict(user) if user else None
+
+def create_user(username, email, password, role='user'):
+    """إنشاء مستخدم جديد"""
+    try:
+        conn = get_db_connection()
+        
+        # التحقق من عدم وجود المستخدم
+        existing = conn.execute('''
+            SELECT id FROM users WHERE username = ? OR email = ?
+        ''', (username, email)).fetchone()
+        
+        if existing:
+            conn.close()
+            return {'success': False, 'error': 'اسم المستخدم أو البريد موجود بالفعل'}
+        
+        # تشفير كلمة المرور
+        password_hash = generate_password_hash(password)
+        
+        # إدراج المستخدم
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO users (username, email, password_hash, role, is_active)
+            VALUES (?, ?, ?, ?, 1)
+        ''', (username, email, password_hash, role))
+        
+        user_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return {'success': True, 'user_id': user_id}
+        
+    except Exception as e:
+        return {'success': False, 'error': f'خطأ في إنشاء المستخدم: {str(e)}'}
+
+def authenticate_user(username, password):
+    """التحقق من بيانات المستخدم"""
+    try:
+        conn = get_db_connection()
+        user = conn.execute('''
+            SELECT id, username, email, password_hash, role, is_active
+            FROM users WHERE (username = ? OR email = ?) AND is_active = 1
+        ''', (username, username)).fetchone()
+        
+        if user and check_password_hash(user['password_hash'], password):
+            # تحديث وقت آخر تسجيل دخول
+            conn.execute('''
+                UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?
+            ''', (user['id'],))
+            conn.commit()
+            conn.close()
+            
+            return {'success': True, 'user': dict(user)}
+        
+        conn.close()
+        return {'success': False, 'error': 'بيانات تسجيل الدخول غير صحيحة'}
+        
+    except Exception as e:
+        return {'success': False, 'error': f'خطأ في التحقق: {str(e)}'}
+
 def test_telegram_connection():
     """اختبار الاتصال بالتليجرام"""
     try:
@@ -188,12 +350,120 @@ def update_statistics():
     conn.commit()
     conn.close()
 
+# ===== صفحات المصادقة =====
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """صفحة تسجيل الدخول"""
+    if request.method == 'POST':
+        data = request.get_json() if request.is_json else request.form
+        username = data.get('username', '').strip()
+        password = data.get('password', '')
+        
+        if not username or not password:
+            error = 'يرجى إدخال اسم المستخدم وكلمة المرور'
+            if request.is_json:
+                return jsonify({'success': False, 'error': error})
+            flash(error, 'error')
+            return render_template('login.html')
+        
+        auth_result = authenticate_user(username, password)
+        
+        if auth_result['success']:
+            user = auth_result['user']
+            session['user_id'] = user['id']
+            session['username'] = user['username']
+            session['role'] = user['role']
+            
+            if request.is_json:
+                return jsonify({
+                    'success': True, 
+                    'message': 'تم تسجيل الدخول بنجاح',
+                    'redirect': url_for('index')
+                })
+            
+            flash('تم تسجيل الدخول بنجاح', 'success')
+            return redirect(url_for('index'))
+        else:
+            if request.is_json:
+                return jsonify({'success': False, 'error': auth_result['error']})
+            flash(auth_result['error'], 'error')
+    
+    return render_template('login.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    """صفحة التسجيل الجديد"""
+    # التحقق من السماح بالتسجيل
+    registration_enabled = get_setting('registration_enabled', 'true') == 'true'
+    if not registration_enabled:
+        flash('التسجيل الجديد غير متاح حالياً', 'error')
+        return redirect(url_for('login'))
+    
+    if request.method == 'POST':
+        data = request.get_json() if request.is_json else request.form
+        username = data.get('username', '').strip()
+        email = data.get('email', '').strip()
+        password = data.get('password', '')
+        confirm_password = data.get('confirm_password', '')
+        
+        # التحقق من البيانات
+        if not all([username, email, password, confirm_password]):
+            error = 'جميع الحقول مطلوبة'
+            if request.is_json:
+                return jsonify({'success': False, 'error': error})
+            flash(error, 'error')
+            return render_template('register.html')
+        
+        if password != confirm_password:
+            error = 'كلمات المرور غير متطابقة'
+            if request.is_json:
+                return jsonify({'success': False, 'error': error})
+            flash(error, 'error')
+            return render_template('register.html')
+        
+        if len(password) < 6:
+            error = 'كلمة المرور يجب أن تكون 6 أحرف على الأقل'
+            if request.is_json:
+                return jsonify({'success': False, 'error': error})
+            flash(error, 'error')
+            return render_template('register.html')
+        
+        # إنشاء المستخدم
+        create_result = create_user(username, email, password)
+        
+        if create_result['success']:
+            if request.is_json:
+                return jsonify({
+                    'success': True, 
+                    'message': 'تم إنشاء الحساب بنجاح، يمكنك تسجيل الدخول الآن',
+                    'redirect': url_for('login')
+                })
+            flash('تم إنشاء الحساب بنجاح، يمكنك تسجيل الدخول الآن', 'success')
+            return redirect(url_for('login'))
+        else:
+            if request.is_json:
+                return jsonify({'success': False, 'error': create_result['error']})
+            flash(create_result['error'], 'error')
+    
+    return render_template('register.html')
+
+@app.route('/logout')
+def logout():
+    """تسجيل الخروج"""
+    session.clear()
+    flash('تم تسجيل الخروج بنجاح', 'info')
+    return redirect(url_for('login'))
+
 @app.route('/')
+@login_required
 def index():
     """الصفحة الرئيسية"""
-    return render_template('index.html')
+    user = get_current_user()
+    return render_template('index.html', user=user)
 
 @app.route('/api/scan', methods=['POST'])
+@login_required
 def save_scan_result():
     """حفظ نتيجة المسح"""
     try:
@@ -205,14 +475,18 @@ def save_scan_result():
         if not code_data:
             return jsonify({'success': False, 'error': 'لا توجد بيانات للحفظ'})
         
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'مطلوب تسجيل الدخول'})
+        
         # حفظ في قاعدة البيانات
         conn = get_db_connection()
         cursor = conn.cursor()
         
         cursor.execute('''
-            INSERT INTO scan_results (code_data, code_type, user_agent, ip_address, notes)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (code_data, code_type, request.user_agent.string, request.remote_addr, notes))
+            INSERT INTO scan_results (code_data, code_type, user_agent, ip_address, notes, user_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (code_data, code_type, request.user_agent.string, request.remote_addr, notes, user['id']))
         
         result_id = cursor.lastrowid
         conn.commit()
@@ -257,6 +531,7 @@ def save_scan_result():
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/results')
+@login_required
 def get_results():
     """الحصول على النتائج"""
     try:
@@ -434,14 +709,281 @@ def export_data():
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/dashboard')
+@login_required
 def dashboard():
     """لوحة التحكم"""
-    return render_template('dashboard.html')
+    user = get_current_user()
+    return render_template('dashboard.html', user=user)
 
 @app.route('/settings')
+@login_required
 def settings_page():
     """صفحة الإعدادات"""
-    return render_template('settings.html')
+    user = get_current_user()
+    return render_template('settings.html', user=user)
+
+# ===== صفحات إدارة المستخدمين =====
+
+@app.route('/admin')
+@admin_required
+def admin_panel():
+    """لوحة تحكم المدير"""
+    user = get_current_user()
+    return render_template('admin.html', user=user)
+
+@app.route('/admin/users')
+@admin_required
+def admin_users():
+    """إدارة المستخدمين"""
+    user = get_current_user()
+    return render_template('admin_users.html', user=user)
+
+@app.route('/profile')
+@login_required
+def profile():
+    """صفحة الملف الشخصي"""
+    user = get_current_user()
+    return render_template('profile.html', user=user)
+
+# ===== API إدارة المستخدمين =====
+
+@app.route('/api/users', methods=['GET'])
+@admin_required
+def get_users():
+    """الحصول على قائمة المستخدمين"""
+    try:
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 20))
+        search = request.args.get('search', '')
+        
+        offset = (page - 1) * limit
+        
+        conn = get_db_connection()
+        
+        # استعلام البحث
+        where_clause = ""
+        params = []
+        
+        if search:
+            where_clause = "WHERE username LIKE ? OR email LIKE ?"
+            params = [f'%{search}%', f'%{search}%']
+        
+        # الحصول على المستخدمين
+        query = f'''
+            SELECT id, username, email, role, created_at, last_login, is_active,
+                   (SELECT COUNT(*) FROM scan_results WHERE user_id = users.id) as scan_count
+            FROM users 
+            {where_clause}
+            ORDER BY created_at DESC 
+            LIMIT ? OFFSET ?
+        '''
+        
+        users = conn.execute(query, params + [limit, offset]).fetchall()
+        
+        # عدد المستخدمين الكلي
+        count_query = f'SELECT COUNT(*) as total FROM users {where_clause}'
+        total = conn.execute(count_query, params).fetchone()['total']
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'users': [dict(row) for row in users],
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total': total,
+                'pages': (total + limit - 1) // limit
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/users/create', methods=['POST'])
+@admin_required
+def create_user_api():
+    """إنشاء مستخدم جديد من المدير"""
+    try:
+        data = request.get_json()
+        username = data.get('username', '').strip()
+        email = data.get('email', '').strip()
+        password = data.get('password', '')
+        role = data.get('role', 'user')
+        
+        if not all([username, email, password]):
+            return jsonify({'success': False, 'error': 'جميع الحقول مطلوبة'})
+        
+        if len(password) < 6:
+            return jsonify({'success': False, 'error': 'كلمة المرور يجب أن تكون 6 أحرف على الأقل'})
+        
+        result = create_user(username, email, password, role)
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/current-user')
+@login_required
+def get_current_user_api():
+    """الحصول على بيانات المستخدم الحالي"""
+    user = get_current_user()
+    if user:
+        return jsonify({'success': True, 'user': user})
+    return jsonify({'success': False, 'error': 'غير مسجل دخول'})
+
+@app.route('/api/users/<int:user_id>', methods=['GET', 'PUT', 'DELETE'])
+@admin_required
+def manage_user(user_id):
+    """إدارة مستخدم محدد"""
+    try:
+        conn = get_db_connection()
+        
+        if request.method == 'GET':
+            # الحصول على تفاصيل المستخدم
+            user = conn.execute('''
+                SELECT id, username, email, role, created_at, last_login, is_active,
+                       (SELECT COUNT(*) FROM scan_results WHERE user_id = ?) as scan_count
+                FROM users WHERE id = ?
+            ''', (user_id, user_id)).fetchone()
+            
+            if not user:
+                conn.close()
+                return jsonify({'success': False, 'error': 'المستخدم غير موجود'})
+            
+            conn.close()
+            return jsonify({'success': True, 'user': dict(user)})
+        
+        elif request.method == 'PUT':
+            # تحديث المستخدم
+            data = request.get_json()
+            username = data.get('username', '').strip()
+            email = data.get('email', '').strip()
+            role = data.get('role', 'user')
+            is_active = data.get('is_active', True)
+            
+            if not username or not email:
+                conn.close()
+                return jsonify({'success': False, 'error': 'اسم المستخدم والبريد مطلوبان'})
+            
+            # التحقق من عدم تضارب الأسماء
+            existing = conn.execute('''
+                SELECT id FROM users WHERE (username = ? OR email = ?) AND id != ?
+            ''', (username, email, user_id)).fetchone()
+            
+            if existing:
+                conn.close()
+                return jsonify({'success': False, 'error': 'اسم المستخدم أو البريد موجود بالفعل'})
+            
+            # تحديث المستخدم
+            conn.execute('''
+                UPDATE users SET username = ?, email = ?, role = ?, is_active = ?
+                WHERE id = ?
+            ''', (username, email, role, is_active, user_id))
+            
+            conn.commit()
+            conn.close()
+            
+            return jsonify({'success': True, 'message': 'تم تحديث المستخدم بنجاح'})
+        
+        elif request.method == 'DELETE':
+            # حذف المستخدم (تعطيل بدلاً من الحذف الفعلي)
+            current_user = get_current_user()
+            if current_user['id'] == user_id:
+                conn.close()
+                return jsonify({'success': False, 'error': 'لا يمكن حذف حسابك الخاص'})
+            
+            conn.execute('UPDATE users SET is_active = 0 WHERE id = ?', (user_id,))
+            conn.commit()
+            conn.close()
+            
+            return jsonify({'success': True, 'message': 'تم تعطيل المستخدم بنجاح'})
+    
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/profile', methods=['GET', 'PUT'])
+@login_required
+def manage_profile():
+    """إدارة الملف الشخصي"""
+    try:
+        user = get_current_user()
+        conn = get_db_connection()
+        
+        if request.method == 'GET':
+            # الحصول على تفاصيل الملف الشخصي
+            profile = conn.execute('''
+                SELECT id, username, email, role, created_at, last_login,
+                       (SELECT COUNT(*) FROM scan_results WHERE user_id = ?) as scan_count
+                FROM users WHERE id = ?
+            ''', (user['id'], user['id'])).fetchone()
+            
+            conn.close()
+            return jsonify({'success': True, 'profile': dict(profile)})
+        
+        elif request.method == 'PUT':
+            # تحديث الملف الشخصي
+            data = request.get_json()
+            username = data.get('username', '').strip()
+            email = data.get('email', '').strip()
+            current_password = data.get('current_password', '')
+            new_password = data.get('new_password', '')
+            
+            if not username or not email:
+                conn.close()
+                return jsonify({'success': False, 'error': 'اسم المستخدم والبريد مطلوبان'})
+            
+            # التحقق من عدم تضارب الأسماء
+            existing = conn.execute('''
+                SELECT id FROM users WHERE (username = ? OR email = ?) AND id != ?
+            ''', (username, email, user['id'])).fetchone()
+            
+            if existing:
+                conn.close()
+                return jsonify({'success': False, 'error': 'اسم المستخدم أو البريد موجود بالفعل'})
+            
+            # إذا كان يريد تغيير كلمة المرور
+            if new_password:
+                if not current_password:
+                    conn.close()
+                    return jsonify({'success': False, 'error': 'كلمة المرور الحالية مطلوبة'})
+                
+                # التحقق من كلمة المرور الحالية
+                current_user_data = conn.execute('''
+                    SELECT password_hash FROM users WHERE id = ?
+                ''', (user['id'],)).fetchone()
+                
+                if not check_password_hash(current_user_data['password_hash'], current_password):
+                    conn.close()
+                    return jsonify({'success': False, 'error': 'كلمة المرور الحالية غير صحيحة'})
+                
+                if len(new_password) < 6:
+                    conn.close()
+                    return jsonify({'success': False, 'error': 'كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل'})
+                
+                # تحديث مع كلمة المرور الجديدة
+                new_password_hash = generate_password_hash(new_password)
+                conn.execute('''
+                    UPDATE users SET username = ?, email = ?, password_hash = ?
+                    WHERE id = ?
+                ''', (username, email, new_password_hash, user['id']))
+            else:
+                # تحديث بدون كلمة المرور
+                conn.execute('''
+                    UPDATE users SET username = ?, email = ?
+                    WHERE id = ?
+                ''', (username, email, user['id']))
+            
+            conn.commit()
+            conn.close()
+            
+            # تحديث session
+            session['username'] = username
+            
+            return jsonify({'success': True, 'message': 'تم تحديث الملف الشخصي بنجاح'})
+    
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/telegram/test')
 def test_telegram():
