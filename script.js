@@ -89,8 +89,25 @@ const loadingOverlay = document.getElementById('loadingOverlay');
 
 // Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
-    initApp();
+    // التأكد من تحميل DOM بالكامل مع تأخير قصير
+    setTimeout(() => {
+        initApp();
+    }, 100);
 });
+
+// إضافة مستمع لحالة تحميل الصفحة كبديل
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            initApp();
+        }, 100);
+    });
+} else {
+    // DOM جاهز بالفعل
+    setTimeout(() => {
+        initApp();
+    }, 100);
+}
 loginBtn.addEventListener('click', handleLogin);
 ownerLoginBtn.addEventListener('click', handleOwnerLogin);
 showOwnerLogin.addEventListener('click', toggleOwnerLogin);
@@ -154,6 +171,13 @@ rememberMeCheckbox.addEventListener('change', function() {
 async function initApp() {
     console.log('🚀 تهيئة تطبيق قارئ الباركود المتطور...');
     
+    // التحقق من العناصر المطلوبة أولاً
+    if (!checkRequiredElements()) {
+        console.error('❌ فشل في تهيئة التطبيق - عناصر مفقودة');
+        showAlert('خطأ في تحميل التطبيق - يرجى إعادة تحميل الصفحة', 'error');
+        return;
+    }
+    
     // التحقق من حالة المكتبات المطلوبة
     checkLibrariesStatus();
     
@@ -175,6 +199,35 @@ async function initApp() {
     monitorConnectionStatus();
     
     console.log('✅ تم تهيئة التطبيق بنجاح مع قاعدة البيانات المركزية');
+}
+
+// فحص العناصر المطلوبة
+function checkRequiredElements() {
+    const requiredElements = [
+        'resultsList',
+        'video',
+        'canvas',
+        'cameraContainer',
+        'usernameInput',
+        'loginBtn'
+    ];
+    
+    const missingElements = [];
+    
+    requiredElements.forEach(elementId => {
+        const element = document.getElementById(elementId);
+        if (!element) {
+            missingElements.push(elementId);
+        }
+    });
+    
+    if (missingElements.length > 0) {
+        console.error('❌ العناصر المفقودة:', missingElements);
+        return false;
+    }
+    
+    console.log('✅ جميع العناصر المطلوبة موجودة');
+    return true;
 }
 
 // انتظار تحميل قاعدة البيانات المركزية
@@ -2544,9 +2597,24 @@ function drawBarcodePattern(context, width, barY, barHeight, padding) {
 
 // Results Management
 function displayResult(result) {
+    // التحقق من وجود العنصر قبل الاستخدام
+    if (!resultsList) {
+        console.error('عنصر resultsList غير موجود في DOM');
+        return;
+    }
+    
     const resultItem = document.createElement('div');
+    if (!resultItem) {
+        console.error('فشل في إنشاء عنصر div');
+        return;
+    }
+    
     resultItem.className = `result-item ${result.isDuplicate ? 'duplicate' : ''} telegram-${result.telegramStatus || 'pending'}`;
-    resultItem.setAttribute('data-result-id', result.id);
+    
+    // التحقق من وجود معرف النتيجة قبل إضافته
+    if (result.id) {
+        resultItem.setAttribute('data-result-id', result.id);
+    }
     
     const telegramStatusIndicator = getTelegramStatusIndicator(result.telegramStatus || 'pending', result.telegramAttempts || 0);
     const duplicateIndicator = result.isDuplicate ? `<span class="duplicate-indicator">مكرر ×${result.duplicateCount}</span>` : '';
@@ -2579,11 +2647,19 @@ function displayResult(result) {
         </div>
     `;
     
-    resultsList.insertBefore(resultItem, resultsList.firstChild);
-    
-    // Update duplicate indicators for all instances of this code if duplicate
-    if (result.isDuplicate) {
-        updateDuplicateIndicators(result.code);
+    try {
+        if (resultsList.firstChild) {
+            resultsList.insertBefore(resultItem, resultsList.firstChild);
+        } else {
+            resultsList.appendChild(resultItem);
+        }
+        
+        // Update duplicate indicators for all instances of this code if duplicate
+        if (result.isDuplicate) {
+            updateDuplicateIndicators(result.code);
+        }
+    } catch (error) {
+        console.error('خطأ في إضافة النتيجة للقائمة:', error);
     }
 }
 
@@ -2706,6 +2782,13 @@ async function loadResults() {
     try {
         showDatabaseStatus('syncing');
         
+        // التحقق من وجود العنصر قبل المتابعة
+        if (!resultsList) {
+            console.error('عنصر resultsList غير موجود - لا يمكن تحميل النتائج');
+            showDatabaseStatus('error');
+            return;
+        }
+        
         // تحميل النتائج من قاعدة البيانات المركزية
         const result = await window.centralDB.loadScans(100, currentUser ? currentUser.username : null);
         
@@ -2724,7 +2807,11 @@ async function loadResults() {
             }));
             
             // مسح قائمة النتائج أولاً
-            resultsList.innerHTML = '';
+            try {
+                resultsList.innerHTML = '';
+            } catch (error) {
+                console.error('خطأ في مسح قائمة النتائج:', error);
+            }
             
             // عرض النتائج (الأحدث أولاً)
             scannedResults.forEach(result => {
@@ -2845,9 +2932,24 @@ async function resumeFailedSends() {
 }
 
 function displayResultFromLoad(result) {
+    // التحقق من وجود العنصر قبل الاستخدام
+    if (!resultsList) {
+        console.error('عنصر resultsList غير موجود في DOM');
+        return;
+    }
+    
     const resultItem = document.createElement('div');
+    if (!resultItem) {
+        console.error('فشل في إنشاء عنصر div');
+        return;
+    }
+    
     resultItem.className = `result-item telegram-${result.telegramStatus || 'pending'}`;
-    resultItem.setAttribute('data-result-id', result.id);
+    
+    // التحقق من وجود معرف النتيجة قبل إضافته
+    if (result.id) {
+        resultItem.setAttribute('data-result-id', result.id);
+    }
     
     const telegramStatusIndicator = getTelegramStatusIndicator(result.telegramStatus || 'pending', result.telegramAttempts || 0);
     
@@ -2873,7 +2975,11 @@ function displayResultFromLoad(result) {
         </div>
     `;
     
-    resultsList.appendChild(resultItem);
+    try {
+        resultsList.appendChild(resultItem);
+    } catch (error) {
+        console.error('خطأ في إضافة النتيجة المحملة للقائمة:', error);
+    }
 }
 
 function updateAllDuplicateIndicators() {

@@ -178,11 +178,21 @@ class AdvancedQRScanner {
 
     async startScanning() {
         try {
-            this.updateScannerStatus('بدء التشغيل...', 'loading');
+            this.updateScannerStatus('طلب أذونات الكاميرا...', 'loading');
+            
+            // التحقق من دعم المتصفح للوسائط
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                throw new Error('المتصفح لا يدعم الوصول للكاميرا');
+            }
             
             document.getElementById('start-scan').style.display = 'none';
             document.getElementById('stop-scan').style.display = 'flex';
             document.getElementById('scanner-guidance').style.display = 'flex';
+
+            // طلب أذونات الكاميرا أولاً
+            await this.requestCameraPermission();
+            
+            this.updateScannerStatus('تهيئة الماسح...', 'loading');
 
             await new Promise((resolve, reject) => {
                 Quagga.init(this.quaggaConfig, (err) => {
@@ -204,8 +214,252 @@ class AdvancedQRScanner {
 
         } catch (error) {
             console.error('فشل في بدء المسح:', error);
-            this.updateScannerStatus('خطأ في التشغيل', 'error');
-            this.showError('فشل في تشغيل الكاميرا. تحقق من الأذونات.');
+            this.handleCameraError(error);
+        }
+    }
+
+    async requestCameraPermission() {
+        try {
+            // محاولة الحصول على إذن الكاميرا
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: "environment"
+                }
+            });
+            
+            // إيقاف stream فوراً حيث أن Quagga ستتولى الأمر
+            stream.getTracks().forEach(track => track.stop());
+            
+            return true;
+        } catch (error) {
+            throw this.handlePermissionError(error);
+        }
+    }
+
+    handlePermissionError(error) {
+        let userMessage = '';
+        let detailedError = '';
+
+        switch (error.name) {
+            case 'NotAllowedError':
+                userMessage = 'تم رفض الوصول للكاميرا. يرجى السماح باستخدام الكاميرا وإعادة المحاولة.';
+                detailedError = 'المستخدم رفض أذونات الكاميرا';
+                break;
+            case 'NotFoundError':
+                userMessage = 'لم يتم العثور على كاميرا. تأكد من وجود كاميرا متصلة بالجهاز.';
+                detailedError = 'لا توجد كاميرا متاحة';
+                break;
+            case 'NotReadableError':
+                userMessage = 'الكاميرا قيد الاستخدام من تطبيق آخر. أغلق التطبيقات الأخرى وحاول مرة أخرى.';
+                detailedError = 'الكاميرا مستخدمة من تطبيق آخر';
+                break;
+            case 'OverconstrainedError':
+                userMessage = 'إعدادات الكاميرا غير متوافقة. سنحاول استخدام إعدادات افتراضية.';
+                detailedError = 'قيود الكاميرا غير متوافقة';
+                break;
+            case 'SecurityError':
+                userMessage = 'خطأ أمني. تأكد من استخدام HTTPS أو localhost.';
+                detailedError = 'خطأ أمني في الوصول للكاميرا';
+                break;
+            default:
+                userMessage = 'خطأ غير متوقع في الوصول للكاميرا. تحقق من إعدادات المتصفح.';
+                detailedError = error.message || 'خطأ غير محدد';
+        }
+
+        return new Error(`${userMessage}\n\nتفاصيل تقنية: ${detailedError}`);
+    }
+
+    handleCameraError(error) {
+        this.updateScannerStatus('خطأ في الكاميرا', 'error');
+        
+        // إعادة إعدادات الأزرار
+        document.getElementById('start-scan').style.display = 'flex';
+        document.getElementById('stop-scan').style.display = 'none';
+        document.getElementById('scanner-guidance').style.display = 'none';
+        
+        // عرض رسالة خطأ مفصلة مع حلول
+        this.showCameraErrorModal(error);
+    }
+
+    showCameraErrorModal(error) {
+        const errorModal = `
+            <div class="modal fade" id="cameraErrorModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header bg-danger text-white">
+                            <h5 class="modal-title">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                مشكلة في الوصول للكاميرا
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="alert alert-danger">
+                                <h6><i class="fas fa-camera"></i> الخطأ:</h6>
+                                <p>${error.message}</p>
+                            </div>
+                            
+                            <div class="solutions">
+                                <h6><i class="fas fa-tools"></i> الحلول المقترحة:</h6>
+                                
+                                <div class="solution-steps">
+                                    <div class="step">
+                                        <h6><i class="fas fa-1"></i> تحقق من أذونات الكاميرا</h6>
+                                        <ul>
+                                            <li>اضغط على أيقونة القفل/الكاميرا في شريط العنوان</li>
+                                            <li>اختر "السماح" أو "Allow" للكاميرا</li>
+                                            <li>أعد تحميل الصفحة</li>
+                                        </ul>
+                                    </div>
+                                    
+                                    <div class="step">
+                                        <h6><i class="fas fa-2"></i> تحقق من الكاميرا</h6>
+                                        <ul>
+                                            <li>تأكد من أن الكاميرا متصلة وتعمل</li>
+                                            <li>أغلق التطبيقات الأخرى التي قد تستخدم الكاميرا</li>
+                                            <li>جرب كاميرا أخرى إن وجدت</li>
+                                        </ul>
+                                    </div>
+                                    
+                                    <div class="step">
+                                        <h6><i class="fas fa-3"></i> جرب متصفح آخر</h6>
+                                        <ul>
+                                            <li>Google Chrome (الأفضل)</li>
+                                            <li>Mozilla Firefox</li>
+                                            <li>Microsoft Edge</li>
+                                        </ul>
+                                    </div>
+                                    
+                                    <div class="step">
+                                        <h6><i class="fas fa-4"></i> بدائل المسح</h6>
+                                        <ul>
+                                            <li>استخدم ماسح باركود خارجي</li>
+                                            <li>اكتب الكود يدوياً</li>
+                                            <li>استخدم تطبيق هاتف محمول</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
+                            <button type="button" class="btn btn-primary" onclick="location.reload()">
+                                <i class="fas fa-redo"></i> إعادة تحميل الصفحة
+                            </button>
+                            <button type="button" class="btn btn-success" onclick="advancedScanner.tryFallbackCamera()">
+                                <i class="fas fa-camera"></i> جرب إعدادات أساسية
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // إضافة النافذة إذا لم تكن موجودة
+        if (!document.getElementById('cameraErrorModal')) {
+            document.body.insertAdjacentHTML('beforeend', errorModal);
+        }
+        
+        const modal = new bootstrap.Modal(document.getElementById('cameraErrorModal'));
+        modal.show();
+    }
+
+    async tryFallbackCamera() {
+        try {
+            this.updateScannerStatus('جرب إعدادات أساسية...', 'loading');
+            
+            // إعدادات كاميرا أساسية
+            this.quaggaConfig.inputStream.constraints = {
+                width: { min: 640 },
+                height: { min: 480 },
+                facingMode: "environment"
+            };
+            
+            // إزالة بعض القيود
+            delete this.quaggaConfig.inputStream.constraints.frameRate;
+            
+            // إخفاء نافذة الخطأ
+            const errorModal = bootstrap.Modal.getInstance(document.getElementById('cameraErrorModal'));
+            if (errorModal) errorModal.hide();
+            
+            // محاولة جديدة
+            await this.startScanning();
+            
+        } catch (error) {
+            console.error('فشل في الإعدادات الأساسية:', error);
+            this.showManualEntryOption();
+        }
+    }
+
+    showManualEntryOption() {
+        const manualEntryHTML = `
+            <div class="manual-entry-container">
+                <div class="alert alert-info">
+                    <h6><i class="fas fa-keyboard"></i> إدخال يدوي</h6>
+                    <p>إذا لم تتمكن من استخدام الكاميرا، يمكنك إدخال الباركود يدوياً:</p>
+                </div>
+                
+                <div class="manual-form">
+                    <div class="mb-3">
+                        <label for="manual-code" class="form-label">رقم الباركود:</label>
+                        <input type="text" class="form-control" id="manual-code" placeholder="أدخل رقم الباركود هنا">
+                    </div>
+                    <div class="mb-3">
+                        <label for="manual-type" class="form-label">نوع الباركود:</label>
+                        <select class="form-select" id="manual-type">
+                            <option value="manual">إدخال يدوي</option>
+                            <option value="CODE_128">Code 128</option>
+                            <option value="EAN_13">EAN-13</option>
+                            <option value="UPC_A">UPC-A</option>
+                            <option value="CODE_39">Code 39</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" onclick="advancedScanner.submitManualCode()">
+                        <i class="fas fa-paper-plane"></i>
+                        إرسال الكود
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        const guidanceElement = document.getElementById('scanner-guidance');
+        guidanceElement.innerHTML = manualEntryHTML;
+        guidanceElement.style.display = 'block';
+    }
+
+    async submitManualCode() {
+        const code = document.getElementById('manual-code').value.trim();
+        const type = document.getElementById('manual-type').value;
+        
+        if (!code) {
+            this.showErrorAlert('يرجى إدخال رقم الباركود');
+            return;
+        }
+        
+        try {
+            this.updateScannerStatus('جاري الإرسال...', 'processing');
+            
+            const success = await this.sendToServerWithRetry(code, type, null);
+            
+            if (success) {
+                this.successCount++;
+                this.showSuccessAlert('تم إرسال الكود بنجاح');
+                this.addToRecentScans(code, type, 'success');
+                this.updateScannerStatus('تم بنجاح', 'success');
+                
+                // مسح النموذج
+                document.getElementById('manual-code').value = '';
+            } else {
+                this.showErrorAlert('فشل في إرسال الكود');
+                this.updateScannerStatus('فشل الإرسال', 'error');
+            }
+            
+            this.updateStats();
+            
+        } catch (error) {
+            console.error('خطأ في إرسال الكود اليدوي:', error);
+            this.showErrorAlert('خطأ في إرسال الكود');
+            this.updateScannerStatus('خطأ في الإرسال', 'error');
         }
     }
 
