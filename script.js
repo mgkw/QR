@@ -1675,6 +1675,9 @@ async function initializeDualScanning() {
     });
 }
 
+// Global QR scanning interval to prevent multiple intervals
+let qrScanInterval = null;
+
 // QR Code scanning using jsQR
 function startQRScanning() {
     console.log('Starting QR Code scanning...');
@@ -1686,9 +1689,16 @@ function startQRScanning() {
         return;
     }
     
-    const qrScanInterval = setInterval(() => {
+    // Clear any existing QR scan interval to prevent multiple intervals
+    if (qrScanInterval) {
+        clearInterval(qrScanInterval);
+        qrScanInterval = null;
+    }
+    
+    qrScanInterval = setInterval(() => {
         if (!isScanning) {
             clearInterval(qrScanInterval);
+            qrScanInterval = null;
             console.log('QR scanning stopped');
             return;
         }
@@ -1796,12 +1806,22 @@ function stopScanning() {
         }
         isScanning = false;
         
-        // QR scanning will automatically stop when isScanning becomes false
+        // Stop QR scanning interval
+        if (qrScanInterval) {
+            clearInterval(qrScanInterval);
+            qrScanInterval = null;
+        }
     }
     
     if (stream) {
         stream.getTracks().forEach(track => track.stop());
         stream = null;
+    }
+    
+    // Clear any existing pause timeout
+    if (pauseTimeout) {
+        clearTimeout(pauseTimeout);
+        pauseTimeout = null;
     }
     
     // Remove any highlights and clear recent scans
@@ -2062,6 +2082,17 @@ function resumeScanningAfterDuplicate(shouldResume) {
     removeHighlight();
     if (shouldResume) {
         isScanning = true;
+        
+        // إعادة تشغيل المسح المستمر
+        if (typeof jsQR !== 'undefined') {
+            startQRScanning();
+        }
+        
+        // إعادة تشغيل مؤشرات المسح
+        if (cameraContainer) {
+            cameraContainer.classList.remove('scanning-paused');
+            cameraContainer.classList.add('scanning-active');
+        }
     }
 }
 
@@ -3179,6 +3210,11 @@ function pauseScanningBriefly(duration = 2500) {
                     cameraContainer.classList.remove('scanning-paused');
                     cameraContainer.classList.add('scanning-active');
                 }
+                
+                // إعادة تشغيل المسح المستمر
+                if (typeof jsQR !== 'undefined') {
+                    startQRScanning();
+                }
             }
             pauseTimeout = null;
         }, duration);
@@ -3198,6 +3234,11 @@ function skipPause() {
         if (cameraContainer) {
             cameraContainer.classList.remove('scanning-paused');
             cameraContainer.classList.add('scanning-active');
+        }
+        
+        // إعادة تشغيل المسح المستمر
+        if (typeof jsQR !== 'undefined') {
+            startQRScanning();
         }
         
         showAlert('تم تخطي التوقف المؤقت', 'info');
