@@ -73,6 +73,9 @@
                                 <button class="btn btn-info" id="checkTelegramBtn">
                                     <i class="fas fa-info-circle"></i> فحص معلومات البوت
                                 </button>
+                                <button class="btn btn-warning" id="diagnoseTelegramBtn">
+                                    <i class="fas fa-stethoscope"></i> تشخيص مفصل
+                                </button>
                             </div>
 
                             <div id="telegramStatusFixed" class="telegram-status connected">
@@ -203,6 +206,7 @@
             document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
             document.getElementById('testTelegramFixedBtn').addEventListener('click', testTelegramFixed);
             document.getElementById('checkTelegramBtn').addEventListener('click', checkTelegramBot);
+            document.getElementById('diagnoseTelegramBtn').addEventListener('click', diagnoseTelegram);
             document.getElementById('backupBtn').addEventListener('click', backupDatabase);
             document.getElementById('clearBtn').addEventListener('click', clearDatabase);
         }
@@ -332,6 +336,58 @@
             }
         }
 
+        async function diagnoseTelegram() {
+            try {
+                showNotification('جارٍ تشخيص التليجرام...', 'info');
+                
+                const response = await fetch('/api/diagnostics/telegram', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    const details = `
+✅ تم إرسال رسالة الاختبار بنجاح!
+
+📊 تفاصيل التشخيص:
+• البوت: @${result.bot_info.bot_name}
+• معرف البوت: ${result.bot_info.bot_id}
+• معرف الرسالة: ${result.send_result.message_id}
+• زمن الاستجابة: ${(result.response_time * 1000).toFixed(0)}ms
+• التاريخ: ${new Date(result.send_result.date * 1000).toLocaleString('ar-SA')}
+
+🎯 الحالة: ممتازة - جميع الاختبارات نجحت
+                    `;
+                    
+                    showNotification(details, 'success');
+                    updateTelegramStatusFixed('success');
+                } else {
+                    const errorDetails = `
+❌ فشل اختبار التليجرام
+
+🔍 تفاصيل الخطأ:
+${result.error}
+
+💡 الحلول المقترحة:
+• تحقق من اتصال الإنترنت
+• جرب استخدام VPN إذا كان التليجرام محجوب
+• تأكد من أن البوت مضاف للمجموعة
+• انتظر دقيقة وحاول مرة أخرى
+                    `;
+                    
+                    showNotification(errorDetails, 'error');
+                    updateTelegramStatusFixed('error');
+                }
+
+            } catch (error) {
+                console.error('خطأ في تشخيص التليجرام:', error);
+                showNotification(`خطأ في التشخيص: ${error.message}`, 'error');
+                updateTelegramStatusFixed('error');
+            }
+        }
+
         function updateTelegramStatusFixed(status = 'connected') {
             const statusEl = document.getElementById('telegramStatusFixed');
             
@@ -359,19 +415,42 @@
         }
 
         function showNotification(message, type = 'success') {
-            const notification = document.getElementById('notification');
+            // إزالة التنبيهات السابقة
+            const existingNotifications = document.querySelectorAll('.notification-custom');
+            existingNotifications.forEach(notif => notif.remove());
             
-            notification.className = `notification ${type}`;
-            notification.innerHTML = `
-                <i class="fas fa-${type === 'error' ? 'exclamation-circle' : 'check-circle'}"></i>
-                ${message}
+            // إنشاء تنبيه جديد
+            const notification = document.createElement('div');
+            notification.className = `notification-custom alert alert-${type === 'error' ? 'danger' : type === 'info' ? 'info' : 'success'} alert-dismissible`;
+            notification.style.cssText = `
+                position: fixed; 
+                top: 20px; 
+                right: 20px; 
+                z-index: 1060; 
+                min-width: 350px;
+                max-width: 500px;
+                border-radius: 15px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+                white-space: pre-line;
+                font-family: 'Cairo', sans-serif;
             `;
             
-            notification.classList.add('show');
+            notification.innerHTML = `
+                <div class="d-flex align-items-start">
+                    <i class="fas fa-${type === 'error' ? 'exclamation-circle' : type === 'info' ? 'info-circle' : 'check-circle'} me-2 mt-1"></i>
+                    <div style="flex: 1; font-size: 0.9rem; line-height: 1.4;">${message}</div>
+                    <button type="button" class="btn-close ms-2" onclick="this.parentElement.parentElement.remove()"></button>
+                </div>
+            `;
             
+            document.body.appendChild(notification);
+            
+            // إزالة التنبيه تلقائياً
             setTimeout(() => {
-                notification.classList.remove('show');
-            }, 4000);
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, type === 'error' ? 8000 : 6000);
         }
     </script>
 </body>

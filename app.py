@@ -173,13 +173,14 @@ def set_setting(key, value):
     conn.close()
 
 def send_telegram_message(message, image_path=None):
-    """إرسال رسالة إلى تليجرام"""
+    """إرسال رسالة إلى تليجرام مع معالجة أخطاء محسنة"""
     try:
         # استخدام البيانات الثابتة
         bot_token = TELEGRAM_BOT_TOKEN
         chat_id = TELEGRAM_CHAT_ID
         
         if not bot_token or not chat_id:
+            print("❌ خطأ: بيانات التليجرام غير مكتملة")
             return False
         
         url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
@@ -192,18 +193,38 @@ def send_telegram_message(message, image_path=None):
         
         response = requests.post(url, data=data, timeout=10)
         
-        # إرسال صورة إضافية إن وجدت
-        if image_path and os.path.exists(image_path):
-            photo_url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
-            with open(image_path, 'rb') as photo:
-                files = {'photo': photo}
-                photo_data = {'chat_id': chat_id, 'caption': 'صورة الباركود'}
-                requests.post(photo_url, data=photo_data, files=files, timeout=10)
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('ok'):
+                print(f"✅ تم إرسال رسالة التليجرام بنجاح (ID: {result['result']['message_id']})")
+                
+                # إرسال صورة إضافية إن وجدت
+                if image_path and os.path.exists(image_path):
+                    try:
+                        photo_url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+                        with open(image_path, 'rb') as photo:
+                            files = {'photo': photo}
+                            photo_data = {'chat_id': chat_id, 'caption': 'صورة الباركود'}
+                            requests.post(photo_url, data=photo_data, files=files, timeout=10)
+                    except Exception as photo_error:
+                        print(f"⚠️ فشل إرسال الصورة: {photo_error}")
+                
+                return True
+            else:
+                print(f"❌ خطأ من التليجرام: {result.get('description', 'غير محدد')}")
+                return False
+        else:
+            print(f"❌ خطأ HTTP {response.status_code}: {response.text}")
+            return False
         
-        return response.status_code == 200
-        
+    except requests.exceptions.Timeout:
+        print("❌ انتهت مهلة الاتصال بالتليجرام - تحقق من الإنترنت")
+        return False
+    except requests.exceptions.ConnectionError:
+        print("❌ فشل الاتصال بالتليجرام - تحقق من الإنترنت أو استخدم VPN")
+        return False
     except Exception as e:
-        print(f"خطأ في إرسال تليجرام: {e}")
+        print(f"❌ خطأ غير متوقع في إرسال تليجرام: {type(e).__name__}: {e}")
         return False
 
 # ===== دوال المصادقة والمستخدمين =====
@@ -1001,6 +1022,150 @@ def telegram_info():
         'status': 'ثابت - مُعد مسبقاً',
         'test_available': True
     })
+
+@app.route('/diagnostics')
+@login_required
+def diagnostics():
+    """صفحة تشخيص النظام"""
+    user = get_current_user()
+    return render_template('diagnostics.html', user=user)
+
+@app.route('/api/diagnostics/telegram', methods=['POST'])
+@login_required
+def diagnostics_telegram():
+    """تشخيص مفصل للتليجرام"""
+    try:
+        # اختبار البوت
+        bot_test = test_telegram_connection()
+        
+        # اختبار إرسال رسالة
+        test_message = f"🔧 اختبار تشخيص النظام - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        
+        try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+            data = {
+                'chat_id': TELEGRAM_CHAT_ID,
+                'text': test_message,
+                'parse_mode': 'HTML'
+            }
+            
+            response = requests.post(url, data=data, timeout=10)
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('ok'):
+                    return jsonify({
+                        'success': True,
+                        'message': 'تم إرسال رسالة الاختبار بنجاح',
+                        'bot_info': bot_test,
+                        'send_result': result['result'],
+                        'response_time': response.elapsed.total_seconds()
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': f"خطأ من التليجرام: {result.get('description', 'غير محدد')}",
+                        'error_code': result.get('error_code')
+                    })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': f"خطأ HTTP: {response.status_code}",
+                    'details': response.text
+                })
+                
+        except requests.exceptions.Timeout:
+            return jsonify({
+                'success': False,
+                'error': 'انتهت مهلة الاتصال - تحقق من الإنترنت'
+            })
+        except requests.exceptions.ConnectionError:
+            return jsonify({
+                'success': False,
+                'error': 'فشل الاتصال - تحقق من الإنترنت أو VPN'
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': f'خطأ غير متوقع: {str(e)}'
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'خطأ في التشخيص: {str(e)}'
+        })
+
+@app.route('/api/diagnostics/system')
+@login_required
+def diagnostics_system():
+    """تشخيص النظام"""
+    try:
+        import psutil
+        import platform
+        
+        # معلومات النظام
+        system_info = {
+            'platform': platform.system(),
+            'platform_release': platform.release(),
+            'platform_version': platform.version(),
+            'architecture': platform.machine(),
+            'processor': platform.processor(),
+            'python_version': platform.python_version(),
+            'hostname': platform.node()
+        }
+        
+        # معلومات الذاكرة
+        memory = psutil.virtual_memory()
+        memory_info = {
+            'total': round(memory.total / (1024**3), 2),
+            'available': round(memory.available / (1024**3), 2),
+            'percent': memory.percent,
+            'used': round(memory.used / (1024**3), 2)
+        }
+        
+        # معلومات القرص
+        disk = psutil.disk_usage('.')
+        disk_info = {
+            'total': round(disk.total / (1024**3), 2),
+            'used': round(disk.used / (1024**3), 2),
+            'free': round(disk.free / (1024**3), 2),
+            'percent': round((disk.used / disk.total) * 100, 2)
+        }
+        
+        # معلومات المعالج
+        cpu_info = {
+            'percent': psutil.cpu_percent(interval=1),
+            'count': psutil.cpu_count(),
+            'freq': psutil.cpu_freq()._asdict() if psutil.cpu_freq() else None
+        }
+        
+        return jsonify({
+            'success': True,
+            'system': system_info,
+            'memory': memory_info,
+            'disk': disk_info,
+            'cpu': cpu_info
+        })
+        
+    except ImportError:
+        # إذا لم يكن psutil متوفر
+        import sys
+        return jsonify({
+            'success': True,
+            'system': {
+                'platform': sys.platform,
+                'python_version': sys.version,
+                'executable': sys.executable
+            },
+            'note': 'معلومات محدودة - يُنصح بتثبيت psutil للحصول على معلومات مفصلة'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'خطأ في جمع معلومات النظام: {str(e)}'
+        })
 
 @app.route('/api/debug/info')
 def debug_info():
