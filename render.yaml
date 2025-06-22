@@ -1,14 +1,31 @@
-# إعدادات Render.com لتطبيق Python Flask مع SQLite
+# إعدادات Render.com لتطبيق Python Flask مع SQLite - خدمة جديدة
 services:
   - type: web
-    name: qr-scanner-python-flask
+    name: python-qr-scanner-v2
     env: python
     region: oregon
     plan: free
+    repo: https://github.com/mgkw/QR.git
+    branch: main
+    rootDir: ./
     buildCommand: |
-      pip install --upgrade pip
+      echo "🚀 بدء بناء مشروع Python Flask QR Scanner..."
+      echo "🐍 Python version: $(python --version)"
+      echo "📦 Upgrading pip..."
+      python -m pip install --upgrade pip
+      echo "📦 Installing requirements..."
       pip install -r requirements.txt
-    startCommand: gunicorn --bind 0.0.0.0:$PORT wsgi:app
+      echo "🔍 Checking installed packages..."
+      pip list | grep -E "(Flask|gunicorn|Pillow)"
+      echo "✅ Build complete!"
+    startCommand: |
+      echo "🚀 Starting Python Flask QR Scanner..."
+      echo "🐍 Python executable: $(which python)"
+      echo "📝 Working directory: $(pwd)"
+      echo "📂 Directory contents:"
+      ls -la
+      echo "🌐 Starting gunicorn server on port $PORT..."
+      exec gunicorn --bind 0.0.0.0:$PORT --workers 1 --timeout 120 wsgi:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.3
@@ -16,6 +33,10 @@ services:
         value: production
       - key: FLASK_DEBUG
         value: False
-    healthCheckPath: /api/statistics
+      - key: PYTHONUNBUFFERED
+        value: 1
+      - key: PYTHONDONTWRITEBYTECODE
+        value: 1
+    healthCheckPath: /api/debug/info
     numInstances: 1
     autoDeploy: true 
