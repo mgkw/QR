@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ماسح الباركود - إدارة المخزون</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            text-align: center;
+            background-color: #121212;
+            color: #f4f4f9;
+        }
+
+        h1 {
+            margin-top: 10px;
+            color: #0b84ed;
+        }
+
+        #container {
+            position: relative;
+            display: inline-block;
+            margin-top: 20px;
+        }
+
+        video {
+            width: 100%;
+            max-width: 600px;
+            border: 2px solid #333;
+            border-radius: 10px;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .list-container {
+            margin-top: 30px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+
+        .barcode-list, .repeated-list {
+            font-size: 16px;
+            background-color: #222;
+            border-radius: 10px;
+            padding: 10px;
+            width: 300px;
+            max-height: 200px;
+            overflow-y: auto;
+            text-align: center;
+        }
+
+        .barcode-list {
+            border: 2px solid #0b84ed;
+        }
+
+        .repeated-list {
+            border: 2px solid #f44336;
+        }
+
+        #flash-toggle {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #0b84ed;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        #flash-toggle.active {
+            background-color: #f44336;
+        }
+
+        .temporary-messages {
+            position: absolute;
+            top: 10%;
+            right: 10px;
+            width: 200px;
+            text-align: right;
+            z-index: 1000;
+        }
+
+        .temporary-message {
+            background-color: rgba(0, 0, 0, 0.7);
+            color: green;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            margin-bottom: 5px;
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+    <h1>ماسح الباركود - إدارة المخزون</h1>
+    <div id="container">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="overlay"></canvas>
+        <div id="temporary-messages" class="temporary-messages"></div>
+    </div>
+    <button id="flash-toggle">تشغيل الفلاش</button>
+    <div class="list-container">
+        <div class="barcode-list" id="barcode-list">آخر 5 باركودات جديدة:</div>
+        <div class="repeated-list" id="repeated-list">آخر 5 باركودات مكررة:</div>
+    </div>
+
+    <audio id="beep-sound" src="https://www.soundjay.com/button/beep-07.wav"></audio>
+
+    <script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"></script>
+    <script>
+        const video = document.getElementById("video");
+        const overlay = document.getElementById("overlay");
+        const context = overlay.getContext("2d");
+        const barcodeListDiv = document.getElementById("barcode-list");
+        const repeatedListDiv = document.getElementById("repeated-list");
+        const flashToggle = document.getElementById("flash-toggle");
+        const temporaryMessages = document.getElementById("temporary-messages");
+        const beepSound = document.getElementById("beep-sound");
+
+        const barcodeDatabase = new Set(); // لتخزين الباركودات المسجلة
+        const barcodeTimes = {}; // لتسجيل توقيت قراءة الباركود
+        const repeatedBarcodes = new Set(); // لتخزين الباركودات المكررة فقط
+
+        let track = null; // مسار الكاميرا للتحكم بالفلاش
+        let flashEnabled = false; // حالة الفلاش
+
+        async function setupCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment" }
+                });
+                video.srcObject = stream;
+
+                // الحصول على المسار للتحكم بالفلاش
+                track = stream.getVideoTracks()[0];
+            } catch (err) {
+                console.error("فشل إعداد الكاميرا:", err);
+                alert("فشل في الوصول إلى الكاميرا.");
+            }
+        }
+
+        flashToggle.addEventListener("click", () => {
+            if (!track) return;
+
+            const capabilities = track.getCapabilities();
+            if (capabilities.torch) {
+                flashEnabled = !flashEnabled;
+                track.applyConstraints({ advanced: [{ torch: flashEnabled }] });
+                flashToggle.classList.toggle("active", flashEnabled);
+                flashToggle.textContent = flashEnabled ? "إيقاف الفلاش" : "تشغيل الفلاش";
+            } else {
+                alert("الجهاز لا يدعم تشغيل الفلاش.");
+            }
+        });
+
+        async function fetchBarcodes() {
+            try {
+                const response = await fetch("/get_barcodes");
+                const barcodes = await response.json();
+
+                barcodes.forEach(([barcode, timestamp]) => {
+                    barcodeDatabase.add(barcode);
+                    barcodeTimes[barcode] = timestamp * 1000; // تحويل التوقيت إلى ميللي ثانية
+                });
+
+                updateLists();
+            } catch (error) {
+                console.error("Error fetching barcodes:", error);
+            }
+        }
+
+        function updateLists() {
+            const recentBarcodes = Array.from(barcodeDatabase).slice(-5);
+            const repeatedBarcodesArray = Array.from(repeatedBarcodes).slice(-5);
+
+            barcodeListDiv.innerHTML = "آخر 5 باركودات جديدة:<br>" + recentBarcodes.join("<br>");
+            repeatedListDiv.innerHTML = "آخر 5 باركودات مكررة:<br>" + repeatedBarcodesArray.join("<br>");
+        }
+
+        async function sendToTelegram(imageDataUrl, barcode) {
+            const botToken = "7037920262:AAGZ4dBjkWhMX58BThOI0ZKkqlE2U6A0LPA";
+            const chatId = "7534566648";
+
+            try {
+                const response = await fetch(imageDataUrl);
+                const blob = await response.blob();
+
+                const formData = new FormData();
+                formData.append("chat_id", chatId);
+                formData.append("caption", `📱 باركود: ${barcode}\n⏰ الوقت: ${new Date().toLocaleString('ar-SA')}\n👤 المستخدم: المسؤول`);
+                formData.append("photo", blob, "barcode.jpg");
+
+                await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+                    method: "POST",
+                    body: formData,
+                });
+
+                console.log("تم إرسال الصورة إلى Telegram بنجاح.");
+            } catch (error) {
+                console.error("فشل في إرسال الصورة إلى Telegram:", error);
+            }
+        }
+
+        function captureBarcodeImage(barcode) {
+            const tempCanvas = document.createElement("canvas");
+            tempCanvas.width = video.videoWidth;
+            tempCanvas.height = video.videoHeight;
+
+            const tempContext = tempCanvas.getContext("2d");
+            
+            // رسم الصورة الأساسية
+            tempContext.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+            
+            // إضافة شريط معلومات شفاف أنيق
+            const infoBarHeight = 90;
+            const gradient = tempContext.createLinearGradient(0, tempCanvas.height - infoBarHeight, 0, tempCanvas.height);
+            gradient.addColorStop(0, "rgba(0, 0, 0, 0.3)");
+            gradient.addColorStop(0.5, "rgba(0, 0, 0, 0.8)");
+            gradient.addColorStop(1, "rgba(0, 0, 0, 0.95)");
+            
+            tempContext.fillStyle = gradient;
+            tempContext.fillRect(0, tempCanvas.height - infoBarHeight, tempCanvas.width, infoBarHeight);
+            
+            // إضافة خط علوي للشريط
+            tempContext.strokeStyle = "rgba(255, 255, 255, 0.3)";
+            tempContext.lineWidth = 1;
+            tempContext.beginPath();
+            tempContext.moveTo(0, tempCanvas.height - infoBarHeight);
+            tempContext.lineTo(tempCanvas.width, tempCanvas.height - infoBarHeight);
+            tempContext.stroke();
+            
+            // إعداد النصوص
+            tempContext.fillStyle = "white";
+            tempContext.font = "bold 18px Arial";
+            tempContext.textAlign = "right";
+            tempContext.shadowColor = "rgba(0, 0, 0, 0.8)";
+            tempContext.shadowBlur = 3;
+            tempContext.shadowOffsetX = 1;
+            tempContext.shadowOffsetY = 1;
+            
+            const currentTime = new Date().toLocaleString('ar-SA', { 
+                year: 'numeric', 
+                month: '2-digit', 
+                day: '2-digit', 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit' 
+            });
+            
+            // رسم المعلومات مع تباعد أفضل
+            const rightMargin = 25;
+            const lineHeight = 25;
+            let yPosition = tempCanvas.height - infoBarHeight + 25;
+            
+            tempContext.fillText(`📱 الباركود: ${barcode}`, tempCanvas.width - rightMargin, yPosition);
+            yPosition += lineHeight;
+            tempContext.fillText(`⏰ الوقت: ${currentTime}`, tempCanvas.width - rightMargin, yPosition);
+            yPosition += lineHeight;
+            tempContext.fillText(`👤 المستخدم: المسؤول`, tempCanvas.width - rightMargin, yPosition);
+
+            const imageDataUrl = tempCanvas.toDataURL("image/jpeg", 0.9);
+            sendToTelegram(imageDataUrl, barcode);
+        }
+
+        async function saveBarcode(barcode) {
+            try {
+                const response = await fetch("/add_barcode", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ barcode })
+                });
+
+                const result = await response.json();
+                console.log("Save result:", result);
+            } catch (error) {
+                console.error("Error saving barcode:", error);
+            }
+        }
+
+        function drawBarcodeFrame(location, color, message) {
+            const { topLeftCorner, topRightCorner, bottomRightCorner, bottomLeftCorner } = location;
+
+            context.beginPath();
+            context.moveTo(topLeftCorner.x, topLeftCorner.y);
+            context.lineTo(topRightCorner.x, topRightCorner.y);
+            context.lineTo(bottomRightCorner.x, bottomRightCorner.y);
+            context.lineTo(bottomLeftCorner.x, bottomLeftCorner.y);
+            context.closePath();
+
+            context.lineWidth = 4;
+            context.strokeStyle = color;
+            context.stroke();
+
+            context.fillStyle = color;
+            context.font = "bold 20px Arial";
+            context.fillText(message, topLeftCorner.x, topLeftCorner.y - 10);
+        }
+
+        function displayTemporaryMessage(message) {
+            const messageDiv = document.createElement("div");
+            messageDiv.className = "temporary-message";
+            messageDiv.textContent = message;
+            temporaryMessages.prepend(messageDiv);
+
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 5000);
+        }
+
+        function scanBarcode() {
+            overlay.width = video.videoWidth;
+            overlay.height = video.videoHeight;
+            context.clearRect(0, 0, overlay.width, overlay.height);
+
+            const tempCanvas = document.createElement("canvas");
+            tempCanvas.width = video.videoWidth;
+            tempCanvas.height = video.videoHeight;
+            const tempContext = tempCanvas.getContext("2d");
+            tempContext.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+
+            const imageData = tempContext.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+            if (code) {
+                const barcode = code.data;
+                const currentTime = Date.now();
+
+                if (barcodeDatabase.has(barcode)) {
+                    const elapsed = (currentTime - barcodeTimes[barcode]) / 1000;
+
+                    if (elapsed < 20) {
+                        drawBarcodeFrame(code.location, "yellow", `⚠️ (${Math.ceil(20 - elapsed)}s) ${barcode}`);
+                        // لا يتم إرسال شيء للتيليجرام في هذه الحالة
+                    } else {
+                        drawBarcodeFrame(code.location, "red", `❌ مكرر: ${barcode}`);
+                        repeatedBarcodes.add(barcode);
+                        // لا يتم إرسال شيء للتيليجرام للباركودات المكررة
+                    }
+                } else {
+                    barcodeDatabase.add(barcode);
+                    barcodeTimes[barcode] = currentTime;
+
+                    drawBarcodeFrame(code.location, "green", `✅ جديد: ${barcode}`);
+                    displayTemporaryMessage(`✅ جديد: ${barcode}`);
+                    beepSound.play();
+                    saveBarcode(barcode);
+                    
+                    // إرسال إلى التيليجرام فقط للباركودات الجديدة
+                    captureBarcodeImage(barcode);
+                }
+
+                updateLists();
+            }
+
+            requestAnimationFrame(scanBarcode);
+        }
+
+        setupCamera().then(() => {
+            fetchBarcodes();
+            video.addEventListener("play", scanBarcode);
+        });
+    </script>
+</body>
+</html>
